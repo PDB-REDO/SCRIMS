@@ -134,6 +134,32 @@ every chain is trivially "common"), name the bait yourself:
 
     confine run path/to/pair -o out/ --bait-chain A
 
+### Running AlphaBridge first (only for `--source alphabridge`)
+
+AlphaBridge is a **separate tool**, not a dependency of CONFINE and not
+installed with it: <https://github.com/PDB-REDO/AlphaBridge> (web server:
+<https://alpha-bridge.eu/>). It carries its own licence terms and its own
+citation requirement — read them before use.
+
+    git clone https://github.com/PDB-REDO/AlphaBridge
+    conda env create -f AlphaBridge/environment.yml --name alphabridge
+    conda activate alphabridge
+
+It processes one AlphaFold3 prediction folder at a time, writing
+`AlphaBridge/alphabridge_data.json` inside it:
+
+    python3 define_interfaces.py -i /path/to/screen/<prediction>
+
+CONFINE needs that file for **every** prediction in the screen, so run it across
+the whole directory before analysing:
+
+    for d in /path/to/screen/*/; do python3 define_interfaces.py -i "$d"; done
+    confine run /path/to/screen -o out/ --source alphabridge
+
+Predictions AlphaBridge fails on are listed in `summary.json` and excluded from
+the matrix, and CONFINE warns when any are — see the note above on why a partial
+run changes the test rather than merely shrinking it.
+
 **AlphaBridge is not required.** It is one optional source, not a dependency:
 with no AlphaBridge output present, sequences and PAE are read from the
 prediction files directly.
