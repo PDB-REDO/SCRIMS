@@ -7,3 +7,4 @@ dist/
 .pytest_cache/
 .ipynb_checkpoints/
 confine_out/
+paper/

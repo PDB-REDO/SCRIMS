@@ -67,10 +67,14 @@ def main(argv=None):
     run.add_argument("--figure-format", default="png", choices=["png", "pdf", "svg"])
     run.add_argument("--max-rows", type=int, default=None,
                      help="cap the plotted rows (the figure states how many are hidden)")
+    run.add_argument("--source", dest="source", default="pae",
+                     choices=["pae", "alphabridge"],
+                     help="pae (default; the only option for AlphaFold2) or alphabridge "
+                          "(AlphaFold3 screens processed by AlphaBridge)")
     run.add_argument("--bait-chain", dest="bait_chain", default=None,
                      help="name the bait chain instead of detecting it by sequence identity")
     for k, v in DEFAULTS.items():
-        if k == "bait_chain":
+        if k in ("bait_chain", "source"):
             continue
         if isinstance(v, bool):
             run.add_argument(f"--{k.replace('_', '-')}", dest=k,
@@ -93,6 +97,7 @@ def main(argv=None):
     n_sig = len(res.significant())
     (a.out / "summary.json").write_text(json.dumps({
         "screen_dir": str(a.screen_dir),
+        "source": res.source,
         "bait": {k: v for k, v in res.bait.items() if k != "chain_ids"},
         "n_predictions_in_matrix": len(res.preds),
         "n_sites": len(res.sites), "n_significant": n_sig,
@@ -112,7 +117,7 @@ def main(argv=None):
         except Exception:
             pass
 
-    print(f"{len(res.preds)} predictions -> {len(res.sites)} sites "
+    print(f"[source: {res.source}] {len(res.preds)} predictions -> {len(res.sites)} sites "
           f"({n_sig} significant) in {len(res.interfaces)} interfaces; wrote {a.out}")
     if res.skipped:
         print(f"skipped {len(res.skipped)} predictions (see summary.json)")

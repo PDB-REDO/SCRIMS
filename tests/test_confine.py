@@ -109,3 +109,35 @@ def test_figure_renders(screen, tmp_path):
     out = tmp_path / "m.png"
     figure(analyze(screen, P=200), out)
     assert out.exists() and out.stat().st_size > 5000
+
+
+# ------------------------------------------------- the AlphaBridge source (AF3)
+def test_alphabridge_source_reads_the_sweep(screen):
+    """Each bait residue takes the highest cut-off at which it is still in an
+    interface; residues never in one stay at 0, the same 'absent' encoding the
+    PAE channel uses."""
+    from conftest import add_alphabridge
+    add_alphabridge(screen)
+    res = analyze(screen, P=200, source="alphabridge")
+
+    assert res.source == "alphabridge"
+    assert res.preds == ["p1", "p2", "p3"]          # only these have an AlphaBridge run
+    assert res.skipped and all("AlphaBridge" in why for why in res.skipped.values())
+
+    row = dict(zip(res.preds, res.M_signal))
+    assert row["p1"][9:14] == pytest.approx(0.9)    # residues 10-14 at cut-off 0.9
+    assert row["p2"][9:14] == pytest.approx(0.7)
+    assert row["p1"][24] == 0.0                     # residue 25: never in an interface
+    assert np.isnan(res.M_pae).all()                # this channel has no PAE of its own
+
+
+def test_alphabridge_source_refuses_when_there_is_no_alphabridge_run(screen):
+    """AlphaFold2 screens have no such output; the failure must say so, not
+    silently produce an empty matrix."""
+    with pytest.raises(FileNotFoundError, match="AlphaBridge"):
+        analyze(screen, P=200, source="alphabridge")
+
+
+def test_unknown_source_is_rejected(screen):
+    with pytest.raises(ValueError, match="source must be"):
+        analyze(screen, P=200, source="distance")

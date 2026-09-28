@@ -101,11 +101,31 @@ A **screen** is a directory of predictions of one bait against many partners. Th
 bait is identified by exact sequence identity — the chain whose full sequence
 appears in *every* prediction. Chain letter and length are never used.
 
+### Two confidence sources
+
+`--source pae` (the default) works for **any** predictor and runs straight off
+the prediction files. `--source alphabridge` is available for **AlphaFold3
+only**, and takes the highest cut-off at which each bait residue survives
+AlphaBridge's interface sweep — a signal that exists because AF3 carries a
+distogram, which AlphaFold2 output does not.
+
+It is not free. Using it means **installing AlphaBridge and running it over
+every prediction in the screen first**, under AlphaBridge's own licence. A
+*partial* run is worse than none: recurrence asks whether partners converge on
+the same residues, so predictions missing from the matrix change the test rather
+than merely shrinking it. CONFINE lists every excluded prediction in
+`summary.json` and warns when any are missing.
+
+The two sources share a 0–1 scale but not its meaning: on the PAE channel 0.8 is
+PAE 5 Å, while on the AlphaBridge channel it means the residue survives to
+cut-off 0.8. Threshold parameters keep their numeric defaults across sources but
+not their interpretation.
+
 | Predictor | Layout | Status |
 |---|---|---|
 | AlphaFold3 (server or local) | `<pred>/<pred>_model.cif` + `<pred>_confidences.json` | supported |
 | AlphaFold2 / ColabFold, AFDB bulk packaging | `<id>-model_v1.cif[.zst]` + `<id>-predicted_aligned_error_v1.json[.zst]` | supported |
-| AlphaBridge run | `<pred>/AlphaBridge/alphabridge_data.json` with a stored `confidence_heatmap` | supported, for screens whose raw PAE is not kept on disk |
+| AlphaBridge run (AF3) | `<pred>/AlphaBridge/alphabridge_data.json` | supported as `--source alphabridge`, and as a PAE shortcut where a `confidence_heatmap` is stored and the raw PAE is not |
 | AlphaFold2 official (`run_alphafold.py`) | `ranked_0.pdb` + `result_model_*.pkl` + `ranking_debug.json` | not yet |
 | ColabFold local (`colabfold_batch`) | `*_unrelaxed_rank_001_*.pdb` + `*_scores_rank_001_*.json` | not yet |
 
@@ -114,7 +134,7 @@ every chain is trivially "common"), name the bait yourself:
 
     confine run path/to/pair -o out/ --bait-chain A
 
-**AlphaBridge is not required.** It is one optional way in, not a dependency:
+**AlphaBridge is not required.** It is one optional source, not a dependency:
 with no AlphaBridge output present, sequences and PAE are read from the
 prediction files directly.
 

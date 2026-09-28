@@ -110,9 +110,15 @@ def figure(res, path=None, max_rows=None, dpi=300, height=None, width=9.0):
 
     _ax, im = plot_matrix(res, ax=ax, max_rows=max_rows, xlabel=False)
     cb = fig.colorbar(im, ax=[ax, axt], fraction=0.025, pad=0.015)
-    cb.set_label("confidence signal   1/(1+(PAE/10)²)")
-    cb.set_ticks([0.0, 0.2, 0.5, 0.8, 1.0])
-    cb.ax.set_yticklabels(["0", "0.2", "0.5\n(PAE 10 Å)", "0.8\n(PAE 5 Å)", "1"])
+    # The two sources share a 0-1 scale but not its meaning, so the colourbar
+    # states which one produced the matrix rather than always naming PAE.
+    if getattr(res, "source", "pae") == "alphabridge":
+        cb.set_label("AlphaBridge interface cut-off")
+        cb.set_ticks([0.0, 0.2, 0.5, 0.8, 1.0])
+    else:
+        cb.set_label("confidence signal   1/(1+(PAE/10)²)")
+        cb.set_ticks([0.0, 0.2, 0.5, 0.8, 1.0])
+        cb.ax.set_yticklabels(["0", "0.2", "0.5\n(PAE 10 Å)", "0.8\n(PAE 5 Å)", "1"])
     cb.outline.set_visible(False)
 
     # Track: total signal per residue — what the recurrence statistic tests.

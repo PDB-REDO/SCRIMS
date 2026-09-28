@@ -20,6 +20,7 @@ Parameter defaults are the validated ones (see README); every one is exposed.
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,12 +31,14 @@ from confine import readers
 from confine.bait import (bait_from_chain, detect_bait,
                           detect_bait_from_partner_map, detect_bait_from_structures)
 from confine.interfaces import merge_interfaces
+from confine.readers import alphabridge as ab
 from confine.matrix import bait_confidence_row, confidence_signal
 from confine.order import binder_clustering
 from confine.stats import call_patches
 
 DEFAULTS = dict(
     # input
+    source="pae",        # "pae" (any predictor) or "alphabridge" (AlphaFold3 only)
     bait_chain=None,     # name the bait chain instead of detecting it by sequence
     # matrix (confine.matrix)
     d0_contact=8.0,      # A; Cb-Cb bar that SELECTS candidate contacts
@@ -58,6 +61,7 @@ class Result:
     res_ids: np.ndarray          # bait residue numbers, 1..L
     M_pae: np.ndarray            # (n_preds, L) raw min-PAE, NaN = no contact
     M_signal: np.ndarray         # (n_preds, L) transformed, 0 = no contact
+    source: str                  # which confidence source built the matrix
     sites: list                  # call_patches output, each with its 'interface'
     interfaces: object = None    # DataFrame: interface, segments, residues, n_patches,
                                  # channels, significant
@@ -92,24 +96,53 @@ def _bait(screen: Path, bait_chain=None):
     if partner_map.exists():
         return detect_bait_from_partner_map(screen, json.loads(partner_map.read_text())), "partner_map"
     if any(screen.glob("*/AlphaBridge/alphabridge_data.json")):
-        return detect_bait(screen), "alphabridge"
+        try:
+            return detect_bait(screen), "alphabridge"
+        except (KeyError, IndexError, TypeError) as exc:
+            # An AlphaBridge run is present but its JSON does not carry the chain
+            # sequences this detector needs (older versions, or a partial run).
+            # The structures are always there, so fall back rather than fail.
+            warnings.warn(f"alphabridge_data.json has no usable chain sequences "
+                          f"({exc!r}); identifying the bait from the structures instead")
     return detect_bait_from_structures(screen), "structures"
 
 
-def load_matrix(screen_dir, d0_contact=8.0, d0_signal=10.0, bait_chain=None):
+def load_matrix(screen_dir, d0_contact=8.0, d0_signal=10.0, bait_chain=None,
+                source="pae"):
     """Return (bait, preds, M_pae, M_signal, res_ids, skipped).
 
-    Per prediction, the source is tried in this order: a precomputed
-    `confidence_heatmap` in alphabridge_data.json (screens whose raw PAE is not
-    kept on disk), then any registered reader. Predictions with no readable PAE
-    are skipped and reported in `skipped`, never silently dropped.
+    With `source="pae"` (the default, and the only option for AlphaFold2) the
+    value is the symmetrised minimum PAE at each bait residue, taken per
+    prediction from a precomputed `confidence_heatmap` in alphabridge_data.json
+    where the raw PAE is no longer on disk, else from any registered reader.
+
+    With `source="alphabridge"` it is instead the highest AlphaBridge sweep
+    cut-off at which the residue belongs to an interface — available for
+    AlphaFold3 screens that have been through an AlphaBridge run, since that
+    sweep rests on AF3's distogram. `M_pae` is then all-NaN: that channel has no
+    PAE of its own.
+
+    Predictions with no readable value are skipped and reported in `skipped`,
+    never silently dropped.
     """
     screen = Path(screen_dir)
     bait, _how = _bait(screen, bait_chain=bait_chain)
     chain_ids_map, L = bait["chain_ids"], bait["length"]
 
-    preds, raw_rows, skipped = [], [], {}
+    if source not in ("pae", "alphabridge"):
+        raise ValueError(f"source must be 'pae' or 'alphabridge', not {source!r}")
+
+    preds, raw_rows, sig_rows, skipped = [], [], [], {}
     for pred, bc in chain_ids_map.items():
+        if source == "alphabridge":
+            j = ab.ab_json(screen, pred)
+            if j is None:
+                skipped[pred] = "no AlphaBridge output"
+                continue
+            preds.append(pred)
+            raw_rows.append(np.full(L, np.nan))       # this channel has no PAE
+            sig_rows.append(ab.bait_row(j, bc, L))
+            continue
         raw = None
         ab_json = screen / pred / "AlphaBridge" / "alphabridge_data.json"
         if ab_json.exists():
@@ -133,10 +166,34 @@ def load_matrix(screen_dir, d0_contact=8.0, d0_signal=10.0, bait_chain=None):
                     raw[rid - 1] = v
         preds.append(pred)
         raw_rows.append(raw)
+        sig_rows.append(confidence_signal(raw, d0_signal))
+
+    # Bait detection defines the screen from whichever files it read, so a
+    # prediction it never saw would otherwise disappear without trace. Report
+    # every prediction present on disk but absent from the matrix.
+    for name in readers.discover(screen):
+        if name not in preds and name not in skipped:
+            skipped[name] = ("no AlphaBridge output" if source == "alphabridge"
+                             else "not part of the detected bait screen")
+
+    if source == "alphabridge" and skipped:
+        # Recurrence tests convergence ACROSS partners, so a partial AlphaBridge
+        # run does not merely lose rows -- it changes the test. Say so loudly.
+        warnings.warn(
+            f"source='alphabridge': {len(skipped)} of {len(skipped) + len(preds)} "
+            "predictions have no AlphaBridge output and are absent from the matrix. "
+            "Recurrence is a claim about convergence across partners, so it is being "
+            "tested on a smaller screen than you have predictions for. Re-run "
+            "AlphaBridge over the whole screen, or use source='pae'.")
+
+    if source == "alphabridge" and not preds:
+        raise FileNotFoundError(
+            f"source='alphabridge' but no prediction under {screen} has "
+            "AlphaBridge/alphabridge_data.json. That source needs an AlphaBridge run "
+            "on AlphaFold3 output; use source='pae' otherwise.")
 
     M_pae = np.array(raw_rows) if raw_rows else np.zeros((0, L))
-    M_signal = (np.array([confidence_signal(r, d0_signal) for r in raw_rows])
-                if raw_rows else np.zeros((0, L)))
+    M_signal = np.array(sig_rows) if sig_rows else np.zeros((0, L))
     return bait, preds, M_pae, M_signal, np.arange(1, L + 1), skipped
 
 
@@ -146,17 +203,23 @@ def analyze(screen_dir, **overrides) -> Result:
     screen_dir = Path(screen_dir)
     bait, preds, M_pae, M_signal, res_ids, skipped = load_matrix(
         screen_dir, d0_contact=p["d0_contact"], d0_signal=p["d0_signal"],
-        bait_chain=p["bait_chain"])
+        bait_chain=p["bait_chain"], source=p["source"])
 
     if M_signal.shape[0] == 0:
-        return Result(screen_dir, p, bait, preds, res_ids, M_pae, M_signal, [],
-                      interfaces=_empty_interfaces(), skipped=skipped)
+        return Result(screen_dir, p, bait, preds, res_ids, M_pae, M_signal,
+                      source=p["source"], sites=[], interfaces=_empty_interfaces(),
+                      skipped=skipped)
 
     # Total confident engagement per bait residue, summed over partners: reported
-    # as strength_A, and (unless tau_amount is set) not used for significance.
-    ok = np.isfinite(M_pae) & (M_pae <= p["tau_strong_pae"])
-    amount = np.where(ok, p["tau_strong_pae"] - np.nan_to_num(M_pae, nan=p["tau_strong_pae"]),
-                      0.0).sum(0)
+    # as strength_A, and (unless tau_amount is set) not used for significance. It
+    # is an Angstrom margin below the contact bar, so it exists only on the PAE
+    # channel; the AlphaBridge sweep has no Angstrom scale to measure against.
+    if p["source"] == "pae":
+        ok = np.isfinite(M_pae) & (M_pae <= p["tau_strong_pae"])
+        amount = np.where(ok, p["tau_strong_pae"] - np.nan_to_num(M_pae, nan=p["tau_strong_pae"]),
+                          0.0).sum(0)
+    else:
+        amount = None
 
     sites = call_patches(M_signal, res_ids, P=p["P"], gap=p["gap"], min_size=p["min_size"],
                          pct=p["pct"], rng_seed=p["rng_seed"], strength_amount=amount,
@@ -184,8 +247,9 @@ def analyze(screen_dir, **overrides) -> Result:
         for s in sites:
             s["q_recur"], s["recurrent"], s["recurrent_core"] = None, False, []
             s["significant"] = s["strength_significant"]
-    return Result(screen_dir, p, bait, preds, res_ids, M_pae, M_signal, sites,
-                  interfaces=ifaces, skipped=skipped, single_pair=single)
+    return Result(screen_dir, p, bait, preds, res_ids, M_pae, M_signal,
+                  source=p["source"], sites=sites, interfaces=ifaces, skipped=skipped,
+                  single_pair=single)
 
 
 def _empty_interfaces():

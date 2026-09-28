@@ -62,3 +62,39 @@ def screen(tmp_path):
         (d / f"{name}_confidences.json").write_text(
             json.dumps(_conf(bait_len, 6, pae, contacts)))
     return tmp_path
+
+
+AA1 = {"p1": "L", "p2": "I", "p3": "V", "p4": "F", "p5": "W", "p6": "Y"}
+
+
+def add_alphabridge(screen, plan=None):
+    """Attach a synthetic AlphaBridge run to predictions of a screen.
+
+    `plan` maps prediction name -> (bait_start, bait_end, highest cut-off at
+    which that range is still in an interface). Written in the shape
+    confine.readers.alphabridge.bait_row reads: a sweep of cut-offs, each
+    listing the interfaces surviving at that level.
+    """
+    plan = plan or {"p1": (10, 14, 0.9), "p2": (10, 14, 0.7), "p3": (11, 15, 0.5)}
+    for name, (a, b, top) in plan.items():
+        d = screen / name / "AlphaBridge"
+        d.mkdir(parents=True, exist_ok=True)
+        interactions = []
+        for c in [round(0.1 * k, 1) for k in range(1, 11)]:
+            if c > top:
+                break
+            interactions.append({
+                "cut-off": c,
+                "interfaces": [{"links": [{
+                    "first": {"asym_id": "A", "link_range": {"start": a, "end": b}},
+                    "second": {"asym_id": "B", "link_range": {"start": 1, "end": 5}},
+                }]}],
+            })
+        # Real AlphaBridge output carries the chain sequences too; bait detection
+        # prefers them when present.
+        doc = {"structure": [{"chains": {"polymer": [
+                   {"label_asym_id": "A", "sequence": "A" * 40},
+                   {"label_asym_id": "B", "sequence": AA1[name] * 6}]}}],
+               "interactions": interactions}
+        (d / "alphabridge_data.json").write_text(json.dumps(doc))
+    return screen
