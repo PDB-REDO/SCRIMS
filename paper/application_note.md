@@ -1,7 +1,10 @@
 # CONFINE: confidence matrices and statistically supported interaction sites from AlphaFold screens
 
 <!-- TARGET: Bioinformatics, Application Note (≤4 pages ≈ 2,600 words, or 2,000 + one figure).
-     Body below is ~2,050 words excluding abstract, caption, references.
+     Body is 2,330 words + 194-word abstract + 625 words of Supplementary
+     Methods (S1-S4), excluding caption and references. Still ~300 over the
+     2,000-plus-one-figure guidance; remaining levers are Fig. 1 to
+     supplementary, or further cuts to 2.1/2.2.
      TODO before submission: author list, affiliations, corresponding author,
      funding, the AlphaBridge citation (ref. 12 — fill in the preprint details),
      the PDBe-KB citation (ref. 13 — verify), repository URL and Zenodo DOI. -->
@@ -254,33 +257,22 @@ dominated by parsing prediction files, not by the statistics.
 
 ## 3 Validation
 
-**Calibration.** Synthetic negative screens were built with the same bait length
-and partner count as a real screen, but with rows taken from *other* proteins
-placed at random offsets, so recurrence's null hypothesis holds by construction
-and any call is a false positive. The shipped null calls 15 clusters across 15
-of 120 such screens (12 %), against 45 clusters in 17 of 24 under the earlier
-segment-scattering null. This remains above the 5 % that *q* < 0.05 implies
-under a complete null, and we report it as such.
+Three instruments were used, in increasing order of directness (Supplementary
+Methods S4).
 
-**Agreement with known interfaces.** Called residues were compared with
-interface residues annotated in experimentally determined structures (PDBe-KB),
-restricted to heterotypic interfaces, over 19 baits and 2,006 annotated
-residues. Recurrence calls 1,513 residues, 47 % of them annotated interface
-residues — 2.57× the density expected from each protein's own interface
-coverage — at 42 % recall, while calling sites in only 3 of 24 synthetic
-negatives. Adding strength sites raises recall to 63 % at 45 % precision, the
-two channels recovering largely disjoint residue sets.<!-- NOTE: this combined
-figure was measured at the previous cluster-forming percentile (90), not the
-shipped default (95). Re-measure at 95 before submission. -->
+| instrument | what it tests | result |
+|---|---|---|
+| 120 synthetic negative screens | false-positive rate, null true by construction | 15 clusters in 15 screens (12 %); the earlier segment-scattering null gave 45 in 17 of 24 |
+| annotated interfaces, 19 baits, 2,006 residues | agreement with experiment | recurrence calls 1,513 residues, 47 % annotated, **2.57×** enrichment, 42 % recall, and fires in 3 of 24 negatives; adding strength gives 63 % recall at 45 % precision<!-- combined figure measured at pct 90; re-measure at 95 --> |
+| 68 solved complexes, truth on both sides | recovery of true interface residues | **71.6 %** of true bait interface residues fall in a called site, **70.4 %** in a significant one |
 
-**A solved-complex gold set.** The sharpest test uses 68 bait–partner pairs
-whose exact complex is in the PDB and whose partner is in the screen, giving
-true interface residues on both sides. **71.6 % of true bait interface residues
-fall inside a called site, 70.4 % inside a significant one.** The corresponding
-precision, 12.6 %, is a **floor**: a bait residue called for a partner other
-than the gold one counts as a miss although it may be correct. Six gold cases
-score zero, the predicted binding mode not overlapping the crystal interface at
-all — a prediction error no downstream statistic can repair.
+Three caveats belong with those numbers. The 12 % false-positive rate is a
+real improvement on 45 clusters in 17 of 24, but it remains above the 5 % that
+*q* < 0.05 implies under a complete null. The gold set's precision, 12.6 %, is a
+**floor** only: a bait residue called for a partner other than the gold one
+counts as a miss although it may be correct. And six gold cases score zero,
+where the predicted binding mode does not overlap the crystal interface at all —
+a prediction error that no downstream statistic can repair.
 
 ## 4 Conclusion
 
@@ -350,6 +342,23 @@ partner co-engagement appeared to favour co-engagement, but scored unannotated
 pairs as negatives. Restricted to evaluable pairs — both members covered by ≥ 3
 residues of some known partner interface — the shipped support criterion keeps
 46 of 57 pairs at 98 % precision and co-engagement adds nothing.
+
+**S4 — Validation instruments.** *Synthetic negative screens* carry the bait
+length and partner count of a real screen, but their rows are real partner rows
+taken from the other proteins in the corpus, each cropped or embedded at a
+random offset; recurrence's null hypothesis is therefore true by construction
+and every call is a false positive. Cropping truncates donors, so these rows
+carry roughly two-thirds of real signal and the false-positive counts are
+conservative. The generator is seeded deterministically — an earlier harness
+using a per-process hash gave 0 of 24 and 4 of 24 on successive runs of the same
+test. *Annotated interfaces* are the interface residues aggregated over all PDB
+structures for each bait, in UniProt numbering, restricted to heterotypic
+interfaces; enrichment is the share of called residues that are annotated,
+divided by that protein's own interface density, so 1.0 is chance. Absence of
+annotation is not evidence of non-interaction, which is why the *gold set* — 68
+bait–partner pairs whose exact complex is solved and whose partner is in the
+screen, giving true residues on both sides — is preferred wherever it can answer
+the question.
 
 ---
 
