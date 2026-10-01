@@ -1,14 +1,14 @@
-# Conda environment for CONFINE, including the test runner.
+# Conda environment for AlphaSIFT, including the test runner.
 #
 #   conda env create -f environment.yml
-#   conda activate confine
+#   conda activate alphasift
 #   pip install -e .
 #   pytest
 #
-# CONFINE itself needs only numpy, scipy, pandas and matplotlib; zstandard is
+# AlphaSIFT itself needs only numpy, scipy, pandas and matplotlib; zstandard is
 # needed only for .zst-compressed AFDB/ColabFold downloads, and pytest only to
 # run the test suite. scipy must be >= 1.11 for scipy.stats.false_discovery_control.
-name: confine
+name: alphasift
 channels:
   - conda-forge
 dependencies:

@@ -72,7 +72,7 @@ def add_alphabridge(screen, plan=None):
 
     `plan` maps prediction name -> (bait_start, bait_end, highest cut-off at
     which that range is still in an interface). Written in the shape
-    confine.readers.alphabridge.bait_row reads: a sweep of cut-offs, each
+    alphasift.readers.alphabridge.bait_row reads: a sweep of cut-offs, each
     listing the interfaces surviving at that level.
     """
     plan = plan or {"p1": (10, 14, 0.9), "p2": (10, 14, 0.7), "p3": (11, 15, 0.5)}

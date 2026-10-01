@@ -1,6 +1,6 @@
-# CONFINE — CONFidence INterface Extraction
+# AlphaSIFT — statistical inference of functional interaction sites from structure-prediction screens
 
-CONFINE turns a set of AlphaFold predictions that share one **bait** protein into
+AlphaSIFT turns a set of AlphaFold predictions that share one **bait** protein into
 two things:
 
 1. a **confidence matrix** — one row per partner prediction, one column per bait
@@ -33,26 +33,41 @@ pDockQ2 (Zhu et al., *Bioinformatics* 2023).
 partner's *whole row* by a random circular offset, randomising only each
 partner's position relative to the others, which is precisely what recurrence
 claims. Clusters are formed above the `pct`-th percentile of that null, each
-observed cluster is compared against null clusters of **similar extent**, and the
-p-values are BH-corrected. A site is `recurrent` at q < 0.05.
+observed cluster is compared against null clusters of **similar extent** (w/1.5
+to 1.5w; when fewer than 50 fall in that band it widens ×1.25 per step until 50
+do), and the p-values are BH-corrected. A site is `recurrent` at q < 0.05.
 
-**Strength — a criterion, not a test.** A region where *one* partner holds at
-least `min_single` (4) residues at signal ≥ `tau_single` (0.80 ≈ PAE 5 Å),
-allowing gaps of up to `single_gap` (2). **It carries no p-value, by design.** A
+**Strength — a criterion, not a test.** A partner qualifies when *it alone* holds
+at least `min_single` (4) residues at signal ≥ `tau_single` (0.80 ≈ PAE 5 Å)
+anywhere on the bait; every sequence piece of it, allowing gaps of up to
+`single_gap` (2), is then a strength region, whatever its length
+(`--strength-scope group` restores the earlier rule: four residues per piece).
+**It carries no p-value, by design.** A
 value claim ("the model is very confident here") has no null in a matrix that
 only supports positional nulls; five candidate tests were built and all failed
 calibration. Report it as a declared criterion.
 
 **The 3-D merge.** Two sites far apart in sequence can be one surface in space.
 For each pair of sites, `support` is the fraction of partner models in which
-their bait heavy atoms come within `d_merge` (8 Å); sites are clustered on
-1 − support, cut at 1 − `merge_support`. Every site reports the interface it
-joined.
+their bait heavy atoms come within `d_merge` (8 Å). Two sites **link** when they
+touch (support ≥ `merge_support`, 0.5), at least `merge_min_shared` (2) partners
+bind both (signal ≥ `partner_tau_in`, 0.5, on a site residue), and the shared
+partners are at least `merge_share_small` (0.7) of the smaller site's partners
+and `merge_share_large` (0.2) of the larger's; interfaces are the connected
+components. A site left alone that is short (< `attach_min_len`, 4 residues) or
+weakly bound (< 2 partners at 0.5) first groups with other such sites it touches
+when they share one of their own partners (signal ≥ `attach_tau_strong`, 0.8, on
+it if any, else ≥ `attach_tau_weak`, 0.3); each group then joins one interface it
+touches whose site one of its partners binds, or stands alone. A site no partner
+binds at 0.5 groups and joins on closeness alone (support ≥ `merge_prox_support`,
+0.9). No partner relatedness is used. `--merge-method average` restores the
+earlier rule (average linkage on 1 − support). Every site reports the interface
+it joined.
 
 ## Install
 
-    pip install confine                      # numpy, scipy, pandas, matplotlib
-    pip install "confine[zst]"               # + zstandard, for .zst AFDB downloads
+    pip install alphasift                    # numpy, scipy, pandas, matplotlib
+    pip install "alphasift[zst]"             # + zstandard, for .zst AFDB downloads
 
 ### Or use the provided environment
 
@@ -60,7 +75,7 @@ If you would rather not touch your own environment, `environment.yml` builds a
 complete one, test runner included:
 
     conda env create -f environment.yml
-    conda activate confine
+    conda activate alphasift
     pip install -e .
 
 ### Running the tests
@@ -73,21 +88,25 @@ the signal is exactly PAE = 10 Å, that 0 means *no contact* rather than weak
 contact, that a planted convergent site is called recurrent, that a screen where
 every partner binds somewhere different calls **nothing** recurrent, that the
 strength criterion rejects three partners covering two residues each but accepts
-one partner covering four, that the bait is found without AlphaBridge, that a
-single pair refuses to report a q-value, and that the figure renders.
+one partner covering four, and counts the partner rather than each piece, that a
+wide cluster on a screen with no convergence is not called, that the merge links
+touching sites sharing partners but not when the sharing is one-sided, that short
+sites attach, group or stand alone, that the bait is found without AlphaBridge,
+that a single pair refuses to report a q-value, that the AlphaBridge source runs
+end to end, and that the figure renders.
 
 Note that `scipy >= 1.11` is required: the recurrence FDR uses
 `scipy.stats.false_discovery_control`, which older versions do not have.
 
 ## Use
 
-    confine run path/to/screen -o out/
+    alphasift run path/to/screen -o out/
 
 writes `matrix.png`, `sites.tsv`, `interfaces.tsv`, `matrix.npz` and
 `summary.json`. Every parameter above is a flag (`--pct`, `--d0-signal`, …).
 
 ```python
-from confine import analyze
+from alphasift import analyze
 res = analyze("path/to/screen")
 res.M_pae        # partners × residues, raw min-PAE (Å); NaN = no contact
 res.M_signal     # the same, transformed to (0, 1]; 0 = no contact
@@ -113,13 +132,13 @@ It is not free. Using it means **installing AlphaBridge and running it over
 every prediction in the screen first**, under AlphaBridge's own licence. A
 *partial* run is worse than none: recurrence asks whether partners converge on
 the same residues, so predictions missing from the matrix change the test rather
-than merely shrinking it. CONFINE lists every excluded prediction in
+than merely shrinking it. AlphaSIFT lists every excluded prediction in
 `summary.json` and warns when any are missing.
 
 The two sources share a 0–1 scale but not its meaning: on the PAE channel 0.8 is
 PAE 5 Å, while on the AlphaBridge channel it means the residue survives to
-cut-off 0.8. Threshold parameters keep their numeric defaults across sources but
-not their interpretation.
+cut-off 0.8. Threshold parameters — including the merge's partner thresholds —
+keep their numeric defaults across sources but not their interpretation.
 
 | Predictor | Layout | Status |
 |---|---|---|
@@ -132,11 +151,11 @@ not their interpretation.
 If a screen has two shared sequences, or you are analysing a single pair (where
 every chain is trivially "common"), name the bait yourself:
 
-    confine run path/to/pair -o out/ --bait-chain A
+    alphasift run path/to/pair -o out/ --bait-chain A
 
 ### Running AlphaBridge first (only for `--source alphabridge`)
 
-AlphaBridge is a **separate tool**, not a dependency of CONFINE and not
+AlphaBridge is a **separate tool**, not a dependency of AlphaSIFT and not
 installed with it: <https://github.com/PDB-REDO/AlphaBridge> (web server:
 <https://alpha-bridge.eu/>). It carries its own licence terms and its own
 citation requirement — read them before use.
@@ -150,14 +169,14 @@ It processes one AlphaFold3 prediction folder at a time, writing
 
     python3 define_interfaces.py -i /path/to/screen/<prediction>
 
-CONFINE needs that file for **every** prediction in the screen, so run it across
+AlphaSIFT needs that file for **every** prediction in the screen, so run it across
 the whole directory before analysing:
 
     for d in /path/to/screen/*/; do python3 define_interfaces.py -i "$d"; done
-    confine run /path/to/screen -o out/ --source alphabridge
+    alphasift run /path/to/screen -o out/ --source alphabridge
 
 Predictions AlphaBridge fails on are listed in `summary.json` and excluded from
-the matrix, and CONFINE warns when any are — see the note above on why a partial
+the matrix, and AlphaSIFT warns when any are — see the note above on why a partial
 run changes the test rather than merely shrinking it.
 
 **AlphaBridge is not required.** It is one optional source, not a dependency:
@@ -174,14 +193,14 @@ machinery, and are a different paper.
 ## Scope limit worth stating plainly
 
 Recurrence needs a screen: it asks whether partners converge *relative to each
-other*. A single pair cannot answer that, so with one prediction CONFINE reports
+other*. A single pair cannot answer that, so with one prediction AlphaSIFT reports
 the matrix and strength regions and explicitly declines to report a q-value.
 
 ## Provenance
 
 The matrix construction, the statistical engine and the 3-D merge are extracted
-**verbatim** from the `viz_int` research pipeline, so published validation of
-those numbers applies to this code unchanged. What is new here is the input
+**verbatim** from the `viz_int` research pipeline (last re-synced 2026-10-01), so
+published validation of those numbers applies to this code unchanged. What is new here is the input
 dispatch layer, bait detection without AlphaBridge, the figure, and the CLI.
 
 ## Licence and citation
@@ -190,7 +209,7 @@ dispatch layer, bait detection without AlphaBridge, the figure, and the CLI.
 intended terms are free availability for non-commercial users, and continued
 availability for at least two years after publication, as the journal requires.
 
-**Relationship to AlphaBridge.** CONFINE contains no AlphaBridge code, does not
+**Relationship to AlphaBridge.** AlphaSIFT contains no AlphaBridge code, does not
 import it, and does not require it to run; AlphaBridge output is one optional
 input format among several. AlphaBridge is distributed by its authors under its
 own, separate agreement, which restricts redistribution and derivative works and
@@ -198,4 +217,4 @@ requires that results obtained through its use cite its publication. If you
 produced your screens with AlphaBridge, those terms apply to that use — cite it
 accordingly.
 
-Citation for CONFINE: the Application Note and Zenodo DOI, once published.
+Citation for AlphaSIFT: the Application Note and Zenodo DOI, once published.

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "confine"
+name = "alphasift"
 version = "0.1.0.dev0"
-description = "CONFidence INterface Extraction: confidence matrices and statistically supported interaction sites from AlphaFold2/AlphaFold3 screens"
+description = "AlphaSIFT: statistical inference of functional interaction sites from AlphaFold2/AlphaFold3 structure-prediction screens"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -20,7 +20,7 @@ zst = ["zstandard>=0.21"]   # only for .zst-compressed AFDB/ColabFold bulk downl
 dev = ["pytest>=7"]
 
 [project.scripts]
-confine = "confine.cli:main"
+alphasift = "alphasift.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,7 +1,7 @@
 """
 Command line: one screen in, a figure and the called sites out.
 
-    confine run SCREEN_DIR -o OUTDIR
+    alphasift run SCREEN_DIR -o OUTDIR
 
 Writes, in OUTDIR:
     matrix.png       the figure: matrix + summed-signal track + marked sites
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from confine import DEFAULTS, analyze
+from alphasift import DEFAULTS, analyze
 
 SITE_COLUMNS = ["res_start", "res_end", "interface", "channel", "significant",
                 "recurrent", "q_recur", "recurrent_core", "strength_significant",
@@ -57,12 +57,12 @@ def _fmt(v):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="confine", description=__doc__,
+    ap = argparse.ArgumentParser(prog="alphasift", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     run = sub.add_parser("run", help="analyse one screen directory")
     run.add_argument("screen_dir", type=Path)
-    run.add_argument("-o", "--out", type=Path, default=Path("confine_out"))
+    run.add_argument("-o", "--out", type=Path, default=Path("alphasift_out"))
     run.add_argument("--no-figure", action="store_true", help="skip the figure")
     run.add_argument("--figure-format", default="png", choices=["png", "pdf", "svg"])
     run.add_argument("--max-rows", type=int, default=None,
@@ -109,7 +109,7 @@ def main(argv=None):
     }, indent=2, default=str))
 
     if not a.no_figure and res.M_signal.shape[0]:
-        from confine.figure import figure
+        from alphasift.figure import figure
         fig = figure(res, a.out / f"matrix.{a.figure_format}", max_rows=a.max_rows)
         try:
             import matplotlib.pyplot as plt

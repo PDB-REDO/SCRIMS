@@ -32,7 +32,7 @@ STR = "#a63603"
 
 def plot_matrix(res, ax=None, order=None, max_rows=None, show_sites=True,
                 xlabel=True):
-    """Draw one screen's matrix. `res` is a confine.Result.
+    """Draw one screen's matrix. `res` is a alphasift.Result.
 
     Returns the matplotlib Axes. With `max_rows`, the strongest rows by total
     signal are kept and the caption count is adjusted — stated on the figure, so

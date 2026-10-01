@@ -9,7 +9,7 @@ statistics it passes through the pTM-style pair term
 ptm_func(x, d0) = 1/(1+(x/d0)^2) with ONE fixed d0 = 10 A for every screen and
 partner (the value pDockQ2 fits; Zhu et al., Bioinformatics 2023). The
 transform flips direction (lower PAE -> higher signal) and bounds to (0, 1], so
-0 means "no contact" and confine.stats runs on it unchanged.
+0 means "no contact" and alphasift.stats runs on it unchanged.
 
 `ptm_func`, `bait_confidence_row` and `confidence_signal` are extracted verbatim
 from viz_int.confidence, minus the `calc_d0` length-dependent d0 helper: its only

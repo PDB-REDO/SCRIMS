@@ -1,7 +1,7 @@
 """
 Screen-level API: a directory of predictions in, a matrix and called sites out.
 
-    from confine import analyze
+    from alphasift import analyze
     res = analyze("path/to/screen")
     res.M_pae        # partners x bait residues, raw min-PAE (A), NaN = no contact
     res.M_signal     # the same, transformed to (0, 1]; 0 = no contact
@@ -27,28 +27,40 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from confine import readers
-from confine.bait import (bait_from_chain, detect_bait,
+from alphasift import readers
+from alphasift.bait import (bait_from_chain, detect_bait,
                           detect_bait_from_partner_map, detect_bait_from_structures)
-from confine.interfaces import merge_interfaces
-from confine.readers import alphabridge as ab
-from confine.matrix import bait_confidence_row, confidence_signal
-from confine.order import binder_clustering
-from confine.stats import call_patches
+from alphasift.interfaces import merge_interfaces
+from alphasift.readers import alphabridge as ab
+from alphasift.matrix import bait_confidence_row, confidence_signal
+from alphasift.order import binder_clustering
+from alphasift.stats import call_patches
 
 DEFAULTS = dict(
     # input
     source="pae",        # "pae" (any predictor) or "alphabridge" (AlphaFold3 only)
     bait_chain=None,     # name the bait chain instead of detecting it by sequence
-    # matrix (confine.matrix)
+    # matrix (alphasift.matrix)
     d0_contact=8.0,      # A; Cb-Cb bar that SELECTS candidate contacts
     d0_signal=10.0,      # A; fixed d0 of the pTM-style transform, all screens alike
     tau_strong_pae=10.0, # A; contact bar for the reported strength amount
-    # statistics (confine.stats)
+    # statistics (alphasift.stats)
     P=5000, gap=1, min_size=4, pct=95, rng_seed=0,
     tau_single=0.8, min_single=4, single_gap=2, tau_amount=None,
-    # 3-D merge (confine.interfaces)
-    merge_3d=True, merge_method="average", merge_support=0.50, d_merge=8.0,
+    # where min_single applies: "partner" (>= 4 residues at >= tau_single anywhere on
+    # the bait, then every sequence piece counts; 2026-09-30) or "group" (each piece)
+    strength_scope="partner",
+    # 3-D merge (alphasift.interfaces). "partner": sites LINK when they touch (support >=
+    # merge_support), >= merge_min_shared partners bind both (signal >= partner_tau_in on
+    # a site residue), shared/smaller >= merge_share_small and shared/larger >=
+    # merge_share_large; interfaces = connected components. Short (< attach_min_len) or
+    # weakly bound sites left alone group with each other and attach to one interface
+    # (own partners at >= attach_tau_strong, else >= attach_tau_weak; partner-less sites
+    # by closeness, support >= merge_prox_support). Any scipy linkage name (e.g.
+    # "average", the rule before 2026-09-30) clusters on 1 - support instead.
+    merge_3d=True, merge_method="partner", merge_support=0.50, d_merge=8.0,
+    merge_min_shared=2, merge_share_small=0.7, merge_share_large=0.2, partner_tau_in=0.5,
+    attach_tau_strong=0.8, attach_tau_weak=0.3, attach_min_len=4, merge_prox_support=0.9,
 )
 
 
@@ -224,7 +236,8 @@ def analyze(screen_dir, **overrides) -> Result:
     sites = call_patches(M_signal, res_ids, P=p["P"], gap=p["gap"], min_size=p["min_size"],
                          pct=p["pct"], rng_seed=p["rng_seed"], strength_amount=amount,
                          tau_amount=p["tau_amount"], tau_single=p["tau_single"],
-                         min_single=p["min_single"], single_gap=p["single_gap"])
+                         min_single=p["min_single"], single_gap=p["single_gap"],
+                         single_scope=p["strength_scope"])
     # ---- 3-D merge: which sites are one binding surface in space ------------
     binder_preds = sorted(pr for pr, ok in zip(preds, M_signal.sum(1) > 0) if ok)
     ifaces = _empty_interfaces()
@@ -233,10 +246,22 @@ def analyze(screen_dir, **overrides) -> Result:
         tbl["patch"] = tbl["res_start"].astype(str) + "-" + tbl["res_end"].astype(str)
         bait_atoms = {pr: readers.load_atoms(screen_dir, pr, bait["chain_ids"][pr])
                       for pr in binder_preds}
+        # Which partners bind a site: each partner's matrix row, {bait residue: signal}
+        # where it has a contact. viz_int rebuilds the same values from the contact
+        # pairs (max of the transform over pairs = transform of the min PAE). With
+        # source="alphabridge" the values are sweep cut-offs, so partner_tau_in and the
+        # attach thresholds keep their numbers but not their PAE meaning.
+        row = dict(zip(preds, M_signal))
+        psig = {pr: {int(r): float(v) for r, v in zip(res_ids, row[pr]) if v > 0}
+                for pr in binder_preds}
         ifaces, _iface_res = merge_interfaces(
             tbl, bait_atoms, binder_preds, merge_3d=p["merge_3d"],
             merge_method=p["merge_method"], merge_support=p["merge_support"],
-            d_merge=p["d_merge"])
+            d_merge=p["d_merge"], partner_sig=psig, min_shared=p["merge_min_shared"],
+            share_small=p["merge_share_small"], share_large=p["merge_share_large"],
+            tau_in=p["partner_tau_in"], tau_strong=p["attach_tau_strong"],
+            tau_weak=p["attach_tau_weak"], min_len=p["attach_min_len"],
+            prox_support=p["merge_prox_support"])
         where = {seg: row.interface for _, row in ifaces.iterrows() for seg in row.segments}
         for s in sites:
             s["interface"] = where.get((s["res_start"], s["res_end"]))
