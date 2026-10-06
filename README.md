@@ -1,15 +1,18 @@
-# AlphaSIFT — statistical inference of functional interaction sites from structure-prediction screens
+# AlphaSIFT — statistical inference of functional interaction sites and shared motifs from structure-prediction screens
 
 AlphaSIFT turns a set of AlphaFold predictions that share one **bait** protein into
-two things:
+three things:
 
 1. a **confidence matrix** — one row per partner prediction, one column per bait
-   residue, valued by how confident AlphaFold is about the contact there; and
+   residue, valued by how confident AlphaFold is about the contact there;
 2. the **interaction sites** on that bait that the screen statistically supports,
-   merged into 3-D interfaces.
+   merged into 3-D interfaces; and
+3. per interface, the **partners** that bind it confidently, with the partner
+   residues involved, and the **sequence motifs** unrelated partners share there.
 
-It answers "which parts of this protein do many partners confidently engage?" and
-it does so from predicted aligned error, not from distance alone.
+It answers "which parts of this protein do many partners confidently engage, who
+binds there, and do they bind the same way?" — from predicted aligned error, not
+from distance alone.
 
 ## What it computes
 
@@ -64,10 +67,48 @@ binds at 0.5 groups and joins on closeness alone (support ≥ `merge_prox_suppor
 earlier rule (average linkage on 1 − support). Every site reports the interface
 it joined.
 
+**Partners at each interface — a description.** Every partner with at least one
+contact pair into the interface at signal ≥ `partner_tau_in` (0.5, PAE 10 Å) is
+listed, with each of its residues in contact tiered by its best pair: **H** at
+≥ `partner_tau_high` (0.8, PAE 5 Å), **M** at ≥ 0.5, **L** below, in exact runs of
+one tier. The pairs are the matrix's own (Cβ–Cβ ≤ 8 Å, symmetrised PAE), seen from
+the partner chain. Worked example at d0 = 10 Å: PAE 4 Å → s = 1/(1 + 0.16) = 0.86 → H;
+PAE 7 Å → s = 0.67 → M; PAE 12 Å → s = 0.41 → L. The tier says how far to trust a
+residue (gold-set precision H 72 %, M 37 %, L 14 %); it is not a test. These always
+come from PAE, whichever `--source` built the matrix.
+
+**Shared motifs — a test (the motif engine).** At every interface, significant or
+not: do *unrelated* partners put *similar* residues on the *same* bait residues more
+often than chance? A partner residue counts where it touches the bait (pair at
+s ≥ 0.5 and Cβ–Cβ ≤ `motif_touch_cb`, 7 Å); partners ≥ 40 % identical form one group,
+so paralogs count once. Residues are compared by BLOSUM62 (`--motif-engine c`, the
+default) or by amino acid plus the partner's Foldseek 3Di state at weight 1/3
+(`3di_aa`). The null shuffles the letters placed on the interface **within DSSP
+class** (helix / strand / other), 1000 times, so "everyone binds with a helix" is
+not a motif; a shuffle within 1e-9 of the observed score counts as a tie, and
+p = (k + 1)/(n + 1), BH-corrected. The **bait side** tests, per bait residue touched
+by ≥ 3 groups, how much the groups agree. The **partner side** tests bait positions
+filled at a constant spacing (≤ 10 residues) along the partner and assembles the
+significant ones into *elements*; a declared filter then keeps in each element only
+the partners that carry it. Elements carried by the same groups beyond chance, or
+preferring similar residues on shared bait residues, are **one motif**; two motifs
+are "different" only when their carriers overlap *less* than chance, otherwise
+"unresolved". Validated in viz_int on 31 baits: the default engine grouped known
+carriers better than random for 12 of 13 known motif entries (8 of 9 on baits added
+after the design), with 1 false element in shuffled controls; `3di_aa` 8 of 13, with
+the higher contact precision (66 % vs 62 %). It needs `mkdssp`; `3di_aa` also
+Foldseek.
+
 ## Install
 
-    pip install alphasift                    # numpy, scipy, pandas, matplotlib
+    pip install alphasift                    # numpy, scipy, pandas, matplotlib, biopython
     pip install "alphasift[zst]"             # + zstandard, for .zst AFDB downloads
+
+Two programs are not on PyPI. **`mkdssp`** (DSSP 4.x) is required by the motif
+engine (`conda install -c conda-forge dssp`); without it `alphasift run` stops and
+says so, unless you pass `--motif-engine none`. **Foldseek** is needed only for
+`--motif-engine 3di_aa` (`conda install -c bioconda foldseek`, or point
+`--foldseek-bin` / `$ALPHASIFT_FOLDSEEK` at a binary).
 
 ### Or use the provided environment
 
@@ -93,7 +134,12 @@ wide cluster on a screen with no convergence is not called, that the merge links
 touching sites sharing partners but not when the sharing is one-sided, that short
 sites attach, group or stand alone, that the bait is found without AlphaBridge,
 that a single pair refuses to report a q-value, that the AlphaBridge source runs
-end to end, and that the figure renders.
+end to end, and that the figure renders. For the partner and motif stages it checks
+that the partner pairs reduce exactly to the matrix values, the H/M/L tiers, that
+the motif engine runs on every interface, that a missing `mkdssp` is a clear error,
+the motif-logo alignment rules, that partner names follow the sequence rather than
+the file header's chain link, and that every output file is written. Tests that run
+the motif engine are skipped where `mkdssp` is not installed.
 
 Note that `scipy >= 1.11` is required: the recurrence FDR uses
 `scipy.stats.false_discovery_control`, which older versions do not have.
@@ -102,8 +148,25 @@ Note that `scipy >= 1.11` is required: the recurrence FDR uses
 
     alphasift run path/to/screen -o out/
 
-writes `matrix.png`, `sites.tsv`, `interfaces.tsv`, `matrix.npz` and
-`summary.json`. Every parameter above is a flag (`--pct`, `--d0-signal`, …).
+writes:
+
+| file | what |
+|---|---|
+| `alphasift.json` | everything below in one versioned document (schema `alphasift/1`, described in `alphasift/export.py`) |
+| `report.html` | one self-contained page mirroring the companion website's protein page — matrix, interface cards, motif views, partners, all binders — with linked selection; opens offline (no 3-D: use the ChimeraX script) |
+| `overview.png` | the matrix with RMSF and recurrence tracks and one interface lane |
+| `interfaces/<I>.png` | per interface: bait-side letter columns, motif lanes, and per motif its partner-sequence logo, carriers and elements |
+| `interfaces/<I>_partners.png` | per interface: every partner with its H/M/L residue ranges, motif residues in bold |
+| `alphasift.cxc` (+ `models/`) | ChimeraX script: interfaces coloured, motif residues in gold, every interface and motif a named selection |
+| `matrix.png` | the matrix with the summed-signal track and the called sites |
+| `sites.tsv`, `interfaces.tsv` | called sites; 3-D interfaces |
+| `partners.tsv`, `bait_side.tsv`, `motifs.tsv` | partner ranges; bait-side columns; one row per motif |
+| `matrix.npz`, `summary.json` | the raw matrices; bait, parameters, counts, skipped predictions |
+
+The figures and the JSON follow the views of the companion website (same colours,
+row order, letter colours and motif-logo alignment). Every parameter above is a flag
+(`--pct`, `--d0-signal`, `--motif-engine`, …). A run on a 216-prediction screen
+takes about 6 minutes, most of it DSSP.
 
 ```python
 from alphasift import analyze
@@ -112,6 +175,8 @@ res.M_pae        # partners × residues, raw min-PAE (Å); NaN = no contact
 res.M_signal     # the same, transformed to (0, 1]; 0 = no contact
 res.sites        # significance, channel, cores, interface
 res.interfaces   # 3-D merged interfaces
+res.partners     # interface -> partners with tiered residue ranges
+res.motifs       # the motif engine's output, every interface
 ```
 
 ## Input formats
@@ -143,7 +208,7 @@ keep their numeric defaults across sources but not their interpretation.
 | Predictor | Layout | Status |
 |---|---|---|
 | AlphaFold3 (server or local) | `<pred>/<pred>_model.cif` + `<pred>_confidences.json` | supported |
-| AlphaFold2 / ColabFold, AFDB bulk packaging | `<id>-model_v1.cif[.zst]` + `<id>-predicted_aligned_error_v1.json[.zst]` | supported |
+| AlphaFold2 / ColabFold, AFDB bulk packaging | `<id>-model_v1.cif[.zst]` + `<id>-predicted_aligned_error_v1.json[.zst]` | supported (the validation data: the NVIDIA heterodimer set from EMBL-EBI, AlphaFold-Multimer via ColabFold 1.6.0 — not AlphaFold3) |
 | AlphaBridge run (AF3) | `<pred>/AlphaBridge/alphabridge_data.json` | supported as `--source alphabridge`, and as a PAE shortcut where a `confidence_heatmap` is stored and the raw PAE is not |
 | AlphaFold2 official (`run_alphafold.py`) | `ranked_0.pdb` + `result_model_*.pkl` + `ranking_debug.json` | not yet |
 | ColabFold local (`colabfold_batch`) | `*_unrelaxed_rank_001_*.pdb` + `*_scores_rank_001_*.json` | not yet |
@@ -183,12 +248,13 @@ run changes the test rather than merely shrinking it.
 with no AlphaBridge output present, sequences and PAE are read from the
 prediction files directly.
 
-## Deliberately out of scope
+## Deliberately not here
 
-The partner-side steps that followed site calling in the original pipeline —
-per-partner contact sets, binding peptides, structure-anchored registers and
-sequence motifs. Those depend on AlphaBridge link confidence and on motif
-machinery, and are a different paper.
+From the original pipeline: the legacy motif panels (a consensus logo per pocket and
+one anchored linear motif, replaced by the motif engine), the AlphaBridge-link-based
+contacts, peptides and registers, the geometry-only channel, and the website's own
+data export. Partner names come from the model files' headers (UniProt accession,
+entry name, gene, organism) — no network lookups.
 
 ## Scope limit worth stating plainly
 
@@ -198,10 +264,16 @@ the matrix and strength regions and explicitly declines to report a q-value.
 
 ## Provenance
 
-The matrix construction, the statistical engine and the 3-D merge are extracted
-**verbatim** from the `viz_int` research pipeline (last re-synced 2026-10-01), so
-published validation of those numbers applies to this code unchanged. What is new here is the input
-dispatch layer, bait detection without AlphaBridge, the figure, and the CLI.
+The matrix construction, the statistical engine, the 3-D merge, the partner
+annotation, the motif engine and the RMSF track are extracted **verbatim** from the
+`viz_int` research pipeline (re-synced 2026-10-06), so its validation applies to this
+code unchanged. Checked: on four screens (PARVA, RHOQ, VAPA, XPO1 — two layouts,
+88 to 441 predictions) matrix, sites, interfaces, partners and the full motif-engine
+output are identical to viz_int's, floats included. The motif-logo alignment is a
+port of the companion website's own code and matches it on all 51 motifs of its 31
+proteins. What is new here is the input dispatch layer, bait detection without
+AlphaBridge, partner names read by sequence from the model headers, the figures,
+the JSON and table outputs, the ChimeraX script, and the CLI.
 
 ## Licence and citation
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alphasift"
 version = "0.1.0.dev0"
-description = "AlphaSIFT: statistical inference of functional interaction sites from AlphaFold2/AlphaFold3 structure-prediction screens"
+description = "AlphaSIFT: interaction sites, binding partners and shared motifs from AlphaFold structure-prediction screens"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,7 +13,10 @@ dependencies = [
     "scipy>=1.10",
     "pandas>=2.0",
     "matplotlib>=3.7",
+    "biopython>=1.81",   # structures (Bio.PDB), partner grouping (PairwiseAligner), BLOSUM62
 ]
+# Not on PyPI, needed at run time: mkdssp (DSSP 4.x) for the motif engine; Foldseek only for
+# --motif-engine 3di_aa. environment.yml installs both.
 
 [project.optional-dependencies]
 zst = ["zstandard>=0.21"]   # only for .zst-compressed AFDB/ColabFold bulk downloads
@@ -24,3 +27,6 @@ alphasift = "alphasift.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+alphasift = ["mat3di.txt"]   # Foldseek 3Di substitution matrix, read by the 3di_aa engine

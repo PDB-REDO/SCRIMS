@@ -65,7 +65,7 @@ def test_discover_and_read(screen):
 
 
 def test_bait_is_found_by_sequence_without_alphabridge(screen):
-    res = analyze(screen, P=200)
+    res = analyze(screen, P=200, motif_engine=None)
     assert res.bait["length"] == 40
     assert res.bait["n_predictions"] == 6
     assert set(res.bait["chain_ids"].values()) == {"A"}
@@ -73,7 +73,8 @@ def test_bait_is_found_by_sequence_without_alphabridge(screen):
 
 # -------------------------------------------------------------- end to end
 def test_end_to_end(screen):
-    res = analyze(screen, P=500)
+    """The site-calling chain; the partner and motif stages have their own tests (test_motifs.py)."""
+    res = analyze(screen, P=500, motif_engine=None)
     assert res.M_signal.shape == (6, 40)
     assert not res.skipped
 
@@ -97,7 +98,7 @@ def test_single_pair_reports_no_qvalue(screen):
     import shutil
     for name in ("p2", "p3", "p4", "p5", "p6"):
         shutil.rmtree(screen / name)
-    res = analyze(screen, P=200)
+    res = analyze(screen, P=200, motif_engine=None)
     assert res.single_pair
     assert all(s["q_recur"] is None and not s["recurrent"] for s in res.sites)
 
@@ -107,7 +108,7 @@ def test_figure_renders(screen, tmp_path):
     matplotlib.use("Agg")
     from alphasift.figure import figure
     out = tmp_path / "m.png"
-    figure(analyze(screen, P=200), out)
+    figure(analyze(screen, P=200, motif_engine=None), out)
     assert out.exists() and out.stat().st_size > 5000
 
 
@@ -118,7 +119,7 @@ def test_alphabridge_source_reads_the_sweep(screen):
     PAE channel uses."""
     from conftest import add_alphabridge
     add_alphabridge(screen)
-    res = analyze(screen, P=200, source="alphabridge")
+    res = analyze(screen, P=200, motif_engine=None, source="alphabridge")
 
     assert res.source == "alphabridge"
     assert res.preds == ["p1", "p2", "p3"]          # only these have an AlphaBridge run
@@ -135,12 +136,12 @@ def test_alphabridge_source_refuses_when_there_is_no_alphabridge_run(screen):
     """AlphaFold2 screens have no such output; the failure must say so, not
     silently produce an empty matrix."""
     with pytest.raises(FileNotFoundError, match="AlphaBridge"):
-        analyze(screen, P=200, source="alphabridge")
+        analyze(screen, P=200, motif_engine=None, source="alphabridge")
 
 
 def test_unknown_source_is_rejected(screen):
     with pytest.raises(ValueError, match="source must be"):
-        analyze(screen, P=200, source="distance")
+        analyze(screen, P=200, motif_engine=None, source="distance")
 
 
 # ------------------------------------- recurrence: the width band (2026-10-01)
@@ -241,7 +242,7 @@ def test_short_pieces_attach_group_or_stand_alone():
 
 
 def test_average_linkage_is_still_available(screen):
-    res = analyze(screen, P=200, merge_method="average")
+    res = analyze(screen, P=200, motif_engine=None, merge_method="average")
     assert all(s.get("interface") for s in res.sites)
 
 
@@ -250,7 +251,7 @@ def test_alphabridge_source_runs_the_partner_merge(screen):
     partners bind a site from the same matrix rows (sweep cut-offs there)."""
     from conftest import add_alphabridge
     add_alphabridge(screen)
-    res = analyze(screen, P=200, source="alphabridge")
+    res = analyze(screen, P=200, motif_engine=None, source="alphabridge")
     assert res.params["merge_method"] == "partner"
     assert res.sites and all(s.get("interface") for s in res.sites)
     assert len(res.interfaces) >= 1

@@ -79,6 +79,32 @@ def bait_confidence_row(chain_ids, res_ids, cb, pae, bait_chain, d0_contact=8.0)
     return res_ids[idx_b], raw_conf, interactor_chain
 
 
+def contact_pairs(chain_ids, res_ids, cb, pae, bait_chain, d0_contact=8.0):
+    """One prediction's bait<->partner contact PAIRS -- the same pairs
+    `bait_confidence_row` reduces to one value per bait residue, kept instead.
+
+    Same selection (Cb-Cb <= d0_contact) and same direction-symmetrised PAE, so
+    the per-bait-residue minimum over these pairs IS that function's raw_conf.
+    Used for the partner side of an interface (alphasift.partners) and the motif
+    engine. Extracted verbatim from viz_int.confidence (2026-09-29).
+
+    Returns (bait_res, partner_res, pae_sym): three aligned 1-D arrays, one entry
+    per contacting pair.
+    """
+    chain_ids = np.asarray(chain_ids)
+    res_ids = np.asarray(res_ids)
+    is_bait = chain_ids == bait_chain
+    other = sorted(set(chain_ids[~is_bait].tolist()))
+    if len(other) != 1:
+        raise ValueError(f"expected exactly one non-bait chain, got {other}")
+    idx_b, idx_i = np.where(is_bait)[0], np.where(chain_ids == other[0])[0]
+    diff = cb[idx_b][:, None, :] - cb[idx_i][None, :, :]
+    dist = np.sqrt((diff ** 2).sum(-1))
+    pae_sym = np.minimum(pae[np.ix_(idx_b, idx_i)], pae[np.ix_(idx_i, idx_b)].T)
+    bi, pj = np.where(dist <= d0_contact)
+    return res_ids[idx_b][bi], res_ids[idx_i][pj], pae_sym[bi, pj]
+
+
 def confidence_signal(raw_conf, d0):
     """raw_conf (Angstrom, NaN=no contact) -> call_patches-ready signal
     (0=no contact, higher=more confident, bounded to (0,1])."""

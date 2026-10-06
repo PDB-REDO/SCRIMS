@@ -4,9 +4,18 @@ Command line: one screen in, a figure and the called sites out.
     alphasift run SCREEN_DIR -o OUTDIR
 
 Writes, in OUTDIR:
-    matrix.png       the figure: matrix + summed-signal track + marked sites
+    alphasift.json   everything below in one versioned document (schema alphasift/1)
+    report.html      self-contained page mirroring the companion website (open offline)
+    overview.png     the website's heatmap view: matrix + RMSF/recurrence tracks + interface lane
+    interfaces/      per interface: <I>.png (bait-side view, motif lanes, motif logos,
+                     carriers, elements) and <I>_partners.png (preys with tiered ranges)
+    alphasift.cxc    ChimeraX script: interfaces and motif residues in 3-D (models/ beside it)
+    matrix.png       the paper figure: matrix + summed-signal track + marked sites
     sites.tsv        one row per called site, with significance, channel and interface
     interfaces.tsv   one row per 3-D interface, with its member segments
+    partners.tsv     one row per interface x prey: tiered residue ranges
+    bait_side.tsv    one row per interface x bait residue: groups, agreement, q, prey letters
+    motifs.tsv       one row per motif: bait residues, groups, carriers, prey consensus
     matrix.npz       M_pae (raw Angstrom, NaN = no contact), M_signal, res_ids, preds
     summary.json     bait, parameters, counts, and every skipped prediction with a reason
 """
@@ -73,8 +82,14 @@ def main(argv=None):
                           "(AlphaFold3 screens processed by AlphaBridge)")
     run.add_argument("--bait-chain", dest="bait_chain", default=None,
                      help="name the bait chain instead of detecting it by sequence identity")
+    run.add_argument("--motif-engine", dest="motif_engine", default=DEFAULTS["motif_engine"],
+                     choices=["c", "3di_aa", "none"],
+                     help="c (default; amino acids, BLOSUM62), 3di_aa (+ Foldseek 3Di; needs Foldseek) "
+                          "or none (skip the motif stage)")
+    run.add_argument("--foldseek-bin", dest="foldseek_bin", default=None,
+                     help="Foldseek binary for --motif-engine 3di_aa (else $ALPHASIFT_FOLDSEEK or PATH)")
     for k, v in DEFAULTS.items():
-        if k in ("bait_chain", "source"):
+        if k in ("bait_chain", "source", "motif_engine", "foldseek_bin"):
             continue
         if isinstance(v, bool):
             run.add_argument(f"--{k.replace('_', '-')}", dest=k,
@@ -86,8 +101,18 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     params = {k: getattr(a, k) for k in DEFAULTS}
+    if params["motif_engine"] == "none":
+        params["motif_engine"] = None
     res = analyze(a.screen_dir, **params)
     a.out.mkdir(parents=True, exist_ok=True)
+
+    from alphasift.export import document, write_json, write_tables
+    doc = document(res)
+    write_json(doc, a.out / "alphasift.json")
+    write_tables(doc, a.out)
+    from alphasift.report import write_report
+    write_report(doc, a.out / "report.html")
+    n_mot = sum(len((i["motif"] or {}).get("motifs", [])) for i in doc["interfaces"])
 
     _write_sites(res, a.out / "sites.tsv")
     _write_interfaces(res, a.out / "interfaces.tsv")
@@ -104,6 +129,7 @@ def main(argv=None):
         "n_recurrent": sum(1 for s in res.sites if s.get("recurrent")),
         "n_strength": sum(1 for s in res.sites if s.get("strength_significant")),
         "n_interfaces": len(res.interfaces),
+        "n_motifs": n_mot, "motif_engine": params["motif_engine"],
         "single_pair": res.single_pair,
         "skipped": res.skipped, "params": params,
     }, indent=2, default=str))
@@ -116,9 +142,23 @@ def main(argv=None):
             plt.close(fig)
         except Exception:
             pass
+        if doc["matrix"]["row_order"]:
+            from alphasift import views
+            views.overview(doc, a.out / f"overview.{a.figure_format}")
+            (a.out / "interfaces").mkdir(exist_ok=True)
+            for k, i in enumerate(doc["interfaces"]):
+                views.interface_card(doc, k, a.out / "interfaces" / f"{i['id']}.{a.figure_format}")
+                views.partner_strips(doc, k, a.out / "interfaces" / f"{i['id']}_partners.{a.figure_format}")
+    if doc["matrix"]["row_order"]:
+        import tempfile
+        from alphasift import readers
+        from alphasift.chimerax import write_cxc
+        with tempfile.TemporaryDirectory() as tmp:
+            write_cxc(doc, lambda pr: readers.model_cif(a.screen_dir, pr, tmp), a.out)
 
     print(f"[source: {res.source}] {len(res.preds)} predictions -> {len(res.sites)} sites "
-          f"({n_sig} significant) in {len(res.interfaces)} interfaces; wrote {a.out}")
+          f"({n_sig} significant) in {len(res.interfaces)} interfaces, {n_mot} motifs "
+          f"(engine {params['motif_engine']}); wrote {a.out}")
     if res.skipped:
         print(f"skipped {len(res.skipped)} predictions (see summary.json)")
     if res.single_pair:

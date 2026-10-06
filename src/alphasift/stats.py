@@ -116,7 +116,7 @@ def _pmass(s, a, b):
 
 
 def call_patches(M, res_ids=None, P=5000, gap=1, min_size=4, pct=95,
-                 rng_seed=0, strength_amount=None, tau_amount=None,
+                 rng_seed=0, strength_amount=None,
                  tau_single=0.8, min_single=4, single_gap=2, single_scope="partner"):
     """Call interaction sites on a partner x bait-residue matrix.
 
@@ -148,11 +148,12 @@ def call_patches(M, res_ids=None, P=5000, gap=1, min_size=4, pct=95,
 
     `strength_amount` (optional, shape (L,)) is the total confident engagement
     per residue summed over all partners; it is reported as `strength_A` /
-    `strength_A_per_res` and, unless `tau_amount` is set, does not gate
-    significance.
+    `strength_A_per_res` and never gates significance.
 
-    Parameters `tau_strong` and `strong_mask` existed in the source version and
-    were ignored by this body; they are not part of this API.
+    Parameters `tau_strong`, `strong_mask` and `tau_amount` exist in the source
+    version and are ignored by its body (tau_amount since 2026-09-21: an A/residue
+    gate next to the footprint criterion would contradict it); they are not part of
+    this API.
     """
     if res_ids is None:
         res_ids = np.arange(1, M.shape[1] + 1)

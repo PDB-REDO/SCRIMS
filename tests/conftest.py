@@ -5,7 +5,9 @@ import pytest
 
 COLS = ["group_PDB", "id", "type_symbol", "label_atom_id", "label_comp_id",
         "label_asym_id", "label_seq_id", "Cartn_x", "Cartn_y", "Cartn_z",
-        "B_iso_or_equiv"]
+        "B_iso_or_equiv", "auth_seq_id", "auth_asym_id",
+        # what real AlphaFold files carry and Bio.PDB (partner side, motifs) requires
+        "label_alt_id", "pdbx_PDB_ins_code", "occupancy", "pdbx_PDB_model_num"]
 
 
 def _cif(bait_len, partner_len, contact_residues, partner_aa="LEU", jitter=0.0):
@@ -15,12 +17,12 @@ def _cif(bait_len, partner_len, contact_residues, partner_aa="LEU", jitter=0.0):
     for i in range(1, bait_len + 1):
         for atom, dz in (("N", -0.5), ("CA", 0.0), ("C", 0.5), ("CB", 1.2)):
             rows.append(["ATOM", aid, atom[0], atom, "ALA", "A", i,
-                         3.5 * i, 0.0 + jitter, dz, 90.0]); aid += 1
+                         3.5 * i, 0.0 + jitter, dz, 90.0, i, "A", ".", "?", 1.0, 1]); aid += 1
     for j in range(1, partner_len + 1):
         y = 4.0 if j in contact_residues else 20.0
         for atom, dz in (("N", -0.5), ("CA", 0.0), ("C", 0.5), ("CB", 1.2)):
             rows.append(["ATOM", aid, atom[0], atom, partner_aa, "B", j,
-                         3.5 * contact_residues.get(j, j), y, dz, 85.0]); aid += 1
+                         3.5 * contact_residues.get(j, j), y, dz, 85.0, j, "B", ".", "?", 1.0, 1]); aid += 1
     out = ["data_test", "#", "loop_"] + [f"_atom_site.{c}" for c in COLS]
     out += [" ".join(str(v) for v in r) for r in rows] + ["#"]
     return "\n".join(out)

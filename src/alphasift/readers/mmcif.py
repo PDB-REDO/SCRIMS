@@ -256,3 +256,57 @@ def parse_cif_atoms(cif_path: str | Path, chain: str | None = None,
     if chain is not None:
         return packed.get(chain, {})
     return packed
+
+
+def _header_loops(text: str, prefixes=("_entity_poly.", "_struct_ref.")) -> dict:
+    """{category: [row dicts]} for the header loops named by `prefixes` (quoted values
+    with spaces handled). Only multi-row `loop_` blocks are read."""
+    import shlex
+    out, lines, i = {}, text.splitlines(), 0
+    while i < len(lines):
+        if lines[i].strip() == "loop_" and i + 1 < len(lines) and lines[i + 1].startswith(prefixes):
+            cat = lines[i + 1].split(".")[0]
+            cols = []
+            i += 1
+            while i < len(lines) and lines[i].startswith(cat + "."):
+                cols.append(lines[i].split(".", 1)[1].strip())
+                i += 1
+            rows = []
+            while i < len(lines) and lines[i].strip() not in ("#", "loop_", "") and not lines[i].startswith("_"):
+                rows.append(shlex.split(lines[i]))
+                i += 1
+            out[cat] = [dict(zip(cols, r)) for r in rows]
+            continue
+        i += 1
+    return out
+
+
+def chain_identities(text: str, chain_sequences: dict) -> dict:
+    """{chain: {'uniprot', 'entry_name', 'gene', 'organism', 'description'} | None} from an
+    mmCIF header (`gene`/`organism` from ModelCIF's `_ma_target_ref_db_details`, when present).
+
+    Maps each chain BY SEQUENCE: its full sequence must equal exactly one
+    `_entity_poly` sequence, whose entity is then looked up in `_struct_ref` and
+    `_entity`. The header's chain -> entity link (`_struct_asym`) is never used: in the
+    raw NVIDIA files it is wrong in ~37 % of models (viz_int docs/PROTEOME_SCALING.md).
+    Checked: the bait chain resolves to the bait's own accession in 300/300 models
+    (RHOQ, VAPA). Chains that do not resolve map to None; AlphaFold3 server output
+    carries no `_struct_ref`, so everything is None there.
+    """
+    h = _header_loops(text, ("_entity_poly.", "_struct_ref.", "_entity.", "_ma_target_ref_db_details."))
+    seq_of = {r.get("entity_id"): r.get("pdbx_seq_one_letter_code", "").replace("\n", "")
+              for r in h.get("_entity_poly", [])}
+    ref = {r.get("entity_id"): r for r in h.get("_struct_ref", [])}
+    desc = {r.get("id"): r.get("pdbx_description") for r in h.get("_entity", [])}
+    ma = {r.get("target_entity_id"): r for r in h.get("_ma_target_ref_db_details", [])}
+    out = {}
+    for ch, s in chain_sequences.items():
+        ents = [e for e, v in seq_of.items() if v == s]
+        r = ref.get(ents[0]) if len(ents) == 1 else None
+        m = ma.get(ents[0], {}) if r is not None else {}
+        out[ch] = None if r is None else {"uniprot": r.get("pdbx_db_accession"),
+                                          "entry_name": r.get("db_code"),
+                                          "gene": m.get("gene_name"),
+                                          "organism": m.get("organism_scientific"),
+                                          "description": desc.get(ents[0])}
+    return out

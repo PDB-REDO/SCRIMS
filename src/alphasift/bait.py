@@ -89,9 +89,11 @@ def detect_bait_from_partner_map(screen_dir: str | Path, partner_map: dict) -> d
     """
     Like detect_bait(), but sources bait-chain identity directly from a
     DB-recorded partner_map (prediction_id -> {"bait_chain": ..., ...}), as
-    written by db_ingest_bait.py from the AF3 DB's own `chain` field -- the
-    same field trusted over the CIF header's own (sometimes "poisoned")
-    _struct_ref_seq block (see IMPROVEMENTS.md #15). Unlike detect_bait()'s
+    written by viz_int's db_ingest_bait.py from the prediction database's own
+    `chain` field (the database stores the NVIDIA heterodimer set from EMBL-EBI,
+    AlphaFold-Multimer via ColabFold -- not AlphaFold3 runs) -- the same field
+    trusted over the CIF header's own (sometimes "poisoned") _struct_ref_seq
+    block (viz_int IMPROVEMENTS.md #15). Unlike detect_bait()'s
     sequence-intersection heuristic, this works even for a bait with only one
     prediction, since there's no other prediction needed to disambiguate against.
 

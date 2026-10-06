@@ -138,6 +138,25 @@ def load_sequences(screen_dir, name: str) -> dict[str, str] | None:
     return None
 
 
+def model_cif(screen_dir, name: str, tmpdir) -> Path:
+    """A plain-text model CIF for `name`, for tools that need a file on disk (Bio.PDB,
+    mkdssp, Foldseek). An existing `<name>/*_model.cif` or loose `<name>-model_v1.cif`
+    is returned as is; a loose `.cif.zst` is decompressed into `tmpdir`."""
+    screen = Path(screen_dir)
+    cifs = sorted((screen / name).glob("*_model.cif"))
+    if cifs:
+        return cifs[0]
+    if (screen / f"{name}-model_v1.cif").exists():
+        return screen / f"{name}-model_v1.cif"
+    zst = screen / f"{name}-model_v1.cif.zst"
+    if zst.exists():
+        from alphasift.readers.afdb import read_maybe_zst
+        out = Path(tmpdir) / f"{name}_model.cif"
+        out.write_bytes(read_maybe_zst(str(zst)))
+        return out
+    raise FileNotFoundError(f"no structure file for {name} in {screen}")
+
+
 def load_atoms(screen_dir, name: str, chain: str) -> dict:
     """{residue number: (n, 3) heavy atoms} for one chain of one prediction.
 
