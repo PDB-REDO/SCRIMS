@@ -15,8 +15,8 @@ dependencies = [
     "matplotlib>=3.7",
     "biopython>=1.81",   # structures (Bio.PDB), partner grouping (PairwiseAligner), BLOSUM62
 ]
-# Not on PyPI, needed at run time: mkdssp (DSSP 4.x) for the motif engine; Foldseek only for
-# --motif-engine 3di_aa. environment.yml installs both.
+# Not on PyPI, needed at run time: mkdssp (DSSP 4.x) for the default motif null (--motif-ss dssp;
+# --motif-ss none needs nothing); Foldseek only for --motif-engine 3di_aa. environment.yml installs both.
 
 [project.optional-dependencies]
 zst = ["zstandard>=0.21"]   # only for .zst-compressed AFDB/ColabFold bulk downloads

@@ -6,8 +6,16 @@ Extracted verbatim from viz_int.motif_engine (2026-10-02: tie-safe p-values, eve
 one-motif-or-several grouping) so that its validation applies to this code unchanged. Changes:
 `partner_3di` and `run_motif_engine` take each prediction's model file (`cif_of`) instead of
 globbing a screen folder, since AlphaSIFT also reads models kept only as `.cif.zst`; the Foldseek
-binary is found via `foldseek_bin`, $ALPHASIFT_FOLDSEEK or PATH; a missing mkdssp is an error up
-front rather than a crash mid-run. Validation: viz_int VALIDATION_LOG (motif stage, 2026-09-29 ..
+binary is found via `foldseek_bin`, $ALPHASIFT_FOLDSEEK or PATH.
+
+Secondary structure is a choice (2026-10-06, user decision), `ss`:
+  "dssp" (default)  as in viz_int: letters are shuffled only within a DSSP class (helix / strand /
+                    other), so that "every partner binds with a helix" is not read as a motif. Needs
+                    mkdssp. This is the validated engine; outputs are identical to viz_int's.
+  "none"            letters are shuffled among ALL residues placed on the interface; no external
+                    program, several times faster. Not validated: the viz_int numbers (known motifs
+                    12/13 etc.) were measured with "dssp".
+Validation: viz_int VALIDATION_LOG (motif stage, 2026-09-29 ..
 2026-10-02), IMPROVEMENTS #34 and its addendum.
 
 Per confidence interface (every one, significant or not; each result carries the flag):
@@ -19,8 +27,8 @@ Per confidence interface (every one, significant or not; each result carries the
              engine "3di_aa": (amino acid, Foldseek 3Di state of the partner chain on its
              own), similarity BLOSUM62 + w3di x 3Di matrix (the 3Di matrix's spread is ~3x
              BLOSUM62's; w3di = 1/3 gives the two equal weight).
-  null       letters shuffled among the residues placed on the interface, only within a DSSP
-             class (helix / strand / other), n_perm times; BH over the tests.
+  null       letters shuffled among the residues placed on the interface -- within DSSP class
+             (ss="dssp") or all together (ss="none"), see above -- n_perm times; BH over the tests.
   Panel 1    per bait residue touched by >= min_groups groups: between-group letter agreement
              vs the null.
   Panel 2    rules (2-3 positions filled at a constant spacing <= max_span residues along the
@@ -39,7 +47,7 @@ Per confidence interface (every one, significant or not; each result carries the
              separate_sites; status "different" only with that positive evidence, else "unresolved".
   scope      every confidence interface (significant or not, flagged): the bait-side Panel 1 exists
              whenever any partner touches the interface, whether or not a motif element is found.
-Needs: mkdssp (DSSP 4.x) on PATH; engine "3di_aa" also a Foldseek binary (createdb) --
+Needs: mkdssp (DSSP 4.x) on PATH for ss="dssp"; engine "3di_aa" also a Foldseek binary (createdb) --
 `foldseek_bin`, $ALPHASIFT_FOLDSEEK or `foldseek` on PATH.
 """
 
@@ -74,7 +82,7 @@ TIE_EPS = 1e-9
 ENGINE_DEFAULTS = dict(TAU=0.5, D0=10.0, TOUCH_CB=7.0, ID_GROUP=0.40, N_PERM=1000, MIN_GROUPS=3,
                        MAX_SPAN=10, Q=0.05, ASM_OVERLAP=0.7, ASM_LINK=4, BIP_LINK=5, ORIENT=0.8,
                        ASM_TOL=1, ASM_CONSIST=0.8, EL_CONSIST=0.9, REDUNDANT=0.7, N_CTRL=3,
-                       CHUNK=250, W3DI=1 / 3, EL_FILTER=True)
+                       CHUNK=250, W3DI=1 / 3, EL_FILTER=True, SS="dssp")
 
 
 def _load_3di_matrix():
@@ -156,13 +164,14 @@ class _Engine:
         assert engine in ENGINES, engine
         self.engine, self.seed_key, self.P = engine, seed_key, params
         self.ifaces, self.pairs, self.seq, self.ss = ifaces, pairs, seq, ss
+        self.stratify = params.get("SS", "dssp") == "dssp"
         self.bait_cb, self.part_cb, self.t3 = bait_cb, part_cb, letters3 or {}
         self.BM = BM_AA
         if engine == "3di_aa":
             self.L3, self.I3, self.M3 = _load_3di_matrix()
             self.BM = (BM_AA[:, None, :, None] + params["W3DI"] * self.M3[None, :, None, :]).reshape(400, 400)
 
-    # -- partner groups, letters, SS
+    # -- partner groups, letters
     def seeded(self, *key):
         return np.random.default_rng(zlib.crc32("|".join(map(str, key)).encode()))
 
@@ -229,9 +238,11 @@ class _Engine:
         return out
 
     # -- null, agreement
-    def make_null(self, obs, real, rng, stratify):
+    def make_null(self, obs, real, rng):
+        """Letters shuffled among the residues placed on the interface: one pool per DSSP class
+        (ss="dssp", as viz_int) or one pool for all (ss="none")."""
         used = sorted({(p, j) for _, p, j, _ in obs if j < len(real[p]) and real[p][j] >= 0})
-        cls = [self.ss_of(p, j) if stratify else "all" for p, j in used]
+        cls = [self.ss_of(p, j) if self.stratify else "all" for p, j in used]
         vals = np.array([real[p][j] for p, j in used])
         idx_by = collections.defaultdict(list)
         for i, c in enumerate(cls):
@@ -665,16 +676,16 @@ class _Engine:
         if not obs:
             return None
         rng = self.seeded(self.seed_key, iface["id"], "C")
-        nulls = {"SS": self.make_null(obs, real, rng, True)}
+        nulls = {"shuffle": self.make_null(obs, real, rng)}
         cols = self.panel1(obs, real, nulls, grp)
         marks, rep = self.marks_and_repeats(cols, real, grp)
         ctrl_p1 = []
         for k_ in range(P["N_CTRL"]):
-            _, ctrl_letters = self.make_null(obs, real, self.seeded(self.seed_key, iface["id"], "C", "ctrl", k_), True)
+            _, ctrl_letters = self.make_null(obs, real, self.seeded(self.seed_key, iface["id"], "C", "ctrl", k_))
             cfull = {p: ctrl_letters.get(p, real[p]) for p in real}
-            ccols = self.panel1(obs, cfull, {"SS": nulls["SS"]}, grp)
-            ctrl_p1.append(sum(1 for c in ccols if c["q"].get("SS") is not None and c["q"]["SS"] < 0.05))
-        ncand, sig = self.rules(obs, real, nulls["SS"][0], grp)
+            ccols = self.panel1(obs, cfull, {"shuffle": nulls["shuffle"]}, grp)
+            ctrl_p1.append(sum(1 for c in ccols if c["q"].get("shuffle") is not None and c["q"]["shuffle"] < 0.05))
+        ncand, sig = self.rules(obs, real, nulls["shuffle"][0], grp)
         prt = self.parts_of(sig); els = self.nonredundant(self.elements(prt, grp), grp)
         if P["EL_FILTER"]:
             els = [x for x in (self.trim(e, grp, real) for e in els) if x]
@@ -682,8 +693,8 @@ class _Engine:
         gp = {grp[p] for _, p, _, _ in obs}
         npairs, bip, alt = self.element_pairs(els, descs, grp, gp)
         motifs, mrel, epairs = self.motif_groups(descs, grp, gp, bip)
-        clett = nulls["SS"][1] | {p: real[p] for p in real if p not in nulls["SS"][1]}
-        _, csig = self.rules(obs, clett, nulls["SS"][0], grp)
+        clett = nulls["shuffle"][1] | {p: real[p] for p in real if p not in nulls["shuffle"][1]}
+        _, csig = self.rules(obs, clett, nulls["shuffle"][0], grp)
         c_el = self.nonredundant(self.elements(self.parts_of(csig), grp), grp)
         if P["EL_FILTER"]:
             c_el = [x for x in (self.trim(e, grp, clett) for e in c_el) if x]
@@ -697,7 +708,7 @@ class _Engine:
             panel1_out.append(dict(pos=str(c["pos"]), touched=None, n_groups=c["n_groups"], agree=c["agree"],
                                    q=c["q"], letters={a: round(v / tot, 3) for a, v in w.items()} if tot else {}))
         return dict(panel1=panel1_out, marks=marks, repeats=rep,
-                    panel2={"SS": dict(candidates=ncand, rules=len(sig), parts=len(prt), elements=descs,
+                    panel2={"shuffle": dict(candidates=ncand, rules=len(sig), parts=len(prt), elements=descs,
                                        pairs=npairs, bipartite=bip, alternative=alt,
                                        motifs=motifs, motif_relations=mrel, element_links=epairs)},
                     significant=iface.get("significant", True),
@@ -737,17 +748,21 @@ def run_motif_engine(engine, seed_key, ifaces, pairs, int_seq, cif_of, bait, bai
     pairs     {prediction: (bait_res, partner_res, pae)} (alphasift.matrix.contact_pairs)
     int_seq   {prediction: {residue: three-letter name}} (alphasift.structures.load_binder_structures)
     cif_of    {prediction: plain-text model CIF path} (for DSSP and Foldseek)
+    params    ENGINE_DEFAULTS overrides; SS = "dssp" (default) or "none" (see the module docstring)
     bait_cb / part_cb  {prediction: {residue: Cb xyz}} (load_binder_structures(..., with_cb=True))
     Returns {'engine', 'params', 'groups': {prediction: group id}, 'ifaces': {id: result | None}}.
     """
-    if shutil.which("mkdssp") is None:
-        raise RuntimeError("the motif engine needs mkdssp (DSSP 4.x) on PATH, e.g. "
-                           "`conda install -c conda-forge dssp`; or run with motif_engine=None")
     P = {**ENGINE_DEFAULTS, **(params or {})}
+    if P["SS"] not in ("dssp", "none"):
+        raise ValueError(f"SS must be 'dssp' or 'none', not {P['SS']!r}")
+    if P["SS"] == "dssp" and shutil.which("mkdssp") is None:
+        raise RuntimeError("the motif engine's secondary-structure null needs mkdssp (DSSP 4.x) on PATH, "
+                           "e.g. `conda install -c conda-forge dssp`; or run without it (motif_ss='none', "
+                           "CLI --motif-ss none), which is not the validated null")
     used =sorted({p for i in ifaces for p in i["partners"] if pairs.get(p) is not None})
     ifaces = [dict(i, partners=[p for p in i["partners"] if pairs.get(p) is not None]) for i in ifaces]
     seq = {p: {r: aa1(n) for r, n in int_seq[p].items()} for p in used}
-    ss = {p: dssp_classes(cif_of[p], bait["chain_ids"][p]) for p in used}
+    ss = {p: dssp_classes(cif_of[p], bait["chain_ids"][p]) for p in used} if P["SS"] == "dssp" else {}
     t3 = partner_3di(cif_of, bait, used, foldseek_bin) if engine == "3di_aa" else None
     pr = {p: tuple(np.asarray(x) for x in pairs[p]) for p in used}
     eng = _Engine(engine, seed_key, ifaces, pr, seq, ss, bait_cb, part_cb, t3, P)

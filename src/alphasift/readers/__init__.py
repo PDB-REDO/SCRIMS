@@ -140,7 +140,7 @@ def load_sequences(screen_dir, name: str) -> dict[str, str] | None:
 
 def model_cif(screen_dir, name: str, tmpdir) -> Path:
     """A plain-text model CIF for `name`, for tools that need a file on disk (Bio.PDB,
-    mkdssp, Foldseek). An existing `<name>/*_model.cif` or loose `<name>-model_v1.cif`
+    Foldseek). An existing `<name>/*_model.cif` or loose `<name>-model_v1.cif`
     is returned as is; a loose `.cif.zst` is decompressed into `tmpdir`."""
     screen = Path(screen_dir)
     cifs = sorted((screen / name).glob("*_model.cif"))

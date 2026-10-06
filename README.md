@@ -83,30 +83,35 @@ often than chance? A partner residue counts where it touches the bait (pair at
 s ≥ 0.5 and Cβ–Cβ ≤ `motif_touch_cb`, 7 Å); partners ≥ 40 % identical form one group,
 so paralogs count once. Residues are compared by BLOSUM62 (`--motif-engine c`, the
 default) or by amino acid plus the partner's Foldseek 3Di state at weight 1/3
-(`3di_aa`). The null shuffles the letters placed on the interface **within DSSP
-class** (helix / strand / other), 1000 times, so "everyone binds with a helix" is
-not a motif; a shuffle within 1e-9 of the observed score counts as a tie, and
-p = (k + 1)/(n + 1), BH-corrected. The **bait side** tests, per bait residue touched
+(`3di_aa`). The null shuffles the letters placed on the interface, 1000 times; a
+shuffle within 1e-9 of the observed score counts as a tie, and p = (k + 1)/(n + 1),
+BH-corrected. By default (`--motif-ss dssp`) letters are shuffled only **within
+DSSP class** (helix / strand / other), so "every partner binds with a helix" is not
+a motif; this is the validated null and needs `mkdssp`. `--motif-ss none` shuffles
+across the whole interface instead: no external program and several times faster,
+but not validated (on four screens it kept 59 of 61 significant bait-side columns,
+found 64, and merged RHOQ's three motifs into one). The **bait side** tests, per bait residue touched
 by ≥ 3 groups, how much the groups agree. The **partner side** tests bait positions
 filled at a constant spacing (≤ 10 residues) along the partner and assembles the
 significant ones into *elements*; a declared filter then keeps in each element only
 the partners that carry it. Elements carried by the same groups beyond chance, or
 preferring similar residues on shared bait residues, are **one motif**; two motifs
 are "different" only when their carriers overlap *less* than chance, otherwise
-"unresolved". Validated in viz_int on 31 baits: the default engine grouped known
-carriers better than random for 12 of 13 known motif entries (8 of 9 on baits added
-after the design), with 1 false element in shuffled controls; `3di_aa` 8 of 13, with
-the higher contact precision (66 % vs 62 %). It needs `mkdssp`; `3di_aa` also
-Foldseek.
+"unresolved". Validated in viz_int with the DSSP null: the default engine grouped
+known carriers better than random for 12 of 13 known motif entries (8 of 9 on baits
+added after the design), with 1 false element in shuffled controls; `3di_aa` 8 of 13,
+with the higher contact precision (66 % vs 62 %). These numbers apply to
+`--motif-ss dssp` only. `3di_aa` also needs Foldseek.
 
 ## Install
 
     pip install alphasift                    # numpy, scipy, pandas, matplotlib, biopython
     pip install "alphasift[zst]"             # + zstandard, for .zst AFDB downloads
 
-Two programs are not on PyPI. **`mkdssp`** (DSSP 4.x) is required by the motif
-engine (`conda install -c conda-forge dssp`); without it `alphasift run` stops and
-says so, unless you pass `--motif-engine none`. **Foldseek** is needed only for
+Two programs are not on PyPI. **`mkdssp`** (DSSP 4.x) is needed by the default,
+validated motif null (`conda install -c conda-forge dssp`); without it `alphasift run`
+stops and says so — pass `--motif-ss none` to run without secondary structure, or
+`--motif-engine none` to skip motifs. **Foldseek** is needed only for
 `--motif-engine 3di_aa` (`conda install -c bioconda foldseek`, or point
 `--foldseek-bin` / `$ALPHASIFT_FOLDSEEK` at a binary).
 
@@ -136,10 +141,11 @@ sites attach, group or stand alone, that the bait is found without AlphaBridge,
 that a single pair refuses to report a q-value, that the AlphaBridge source runs
 end to end, and that the figure renders. For the partner and motif stages it checks
 that the partner pairs reduce exactly to the matrix values, the H/M/L tiers, that
-the motif engine runs on every interface, that a missing `mkdssp` is a clear error,
-the motif-logo alignment rules, that partner names follow the sequence rather than
-the file header's chain link, and that every output file is written. Tests that run
-the motif engine are skipped where `mkdssp` is not installed.
+the motif engine runs on every interface, in both null modes, that DSSP is the
+default and a missing `mkdssp` is a clear error, that `--motif-ss none` needs no
+external program, the motif-logo alignment rules, that partner names follow the
+sequence rather than the file header's chain link, and that every output file is
+written. Tests of the DSSP mode are skipped where `mkdssp` is not installed.
 
 Note that `scipy >= 1.11` is required: the recurrence FDR uses
 `scipy.stats.false_discovery_control`, which older versions do not have.
@@ -165,8 +171,9 @@ writes:
 
 The figures and the JSON follow the views of the companion website (same colours,
 row order, letter colours and motif-logo alignment). Every parameter above is a flag
-(`--pct`, `--d0-signal`, `--motif-engine`, …). A run on a 216-prediction screen
-takes about 6 minutes, most of it DSSP.
+(`--pct`, `--d0-signal`, `--motif-engine`, `--motif-ss`, …). A 216-prediction screen
+(RHOQ) takes about 6 minutes on one core with the DSSP null, of which mkdssp is about
+3.7 (75 models × ~3 s).
 
 ```python
 from alphasift import analyze

@@ -334,15 +334,18 @@ def _draw_partner_logo(cv, al, x0, y0):
     return x - x0
 
 
-def _wrap(cv, items, x0, y, max_w, size=7, gap=8):
-    """Lay out text chips left to right, wrapping; items = [(text, color, weight)]. Returns the next y."""
+def _wrap(cv, items, x0, y, max_w, size=7, gap=10):
+    """Lay out text chips left to right, wrapping at x0 + max_w; items = [(text, color, weight)].
+    Widths are measured on the rendered text (1 px = 1 unit at dpi 100). Returns the next y."""
+    r = cv.fig.canvas.get_renderer()
     x = x0
     for t, c, w in items:
-        tw = 5.2 * len(t) * size / 7 + gap
+        h = cv.ax.text(x, y, t, fontsize=size, color=c, fontweight=w)
+        tw = h.get_window_extent(renderer=r).width
         if x > x0 and x + tw > x0 + max_w:
             x, y = x0, y + 13
-        cv.text(x, y, t, size=size, color=c, weight=w)
-        x += tw
+            h.set_position((x, y))
+        x += tw + gap
     return y + 15
 
 

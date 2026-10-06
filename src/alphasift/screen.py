@@ -76,6 +76,9 @@ DEFAULTS = dict(
     # None to skip. The validated viz_int settings (VALIDATION_LOG 2026-10-01/02).
     motif_engine="c", motif_n_perm=1000, motif_max_span=10, motif_touch_cb=7.0,
     motif_id_group=0.40, motif_w3di=1 / 3, motif_el_filter=True, foldseek_bin=None,
+    # the motif null's secondary structure: "dssp" (validated; letters shuffled within helix /
+    # strand / other; needs mkdssp) or "none" (one pool; no external program; not validated)
+    motif_ss="dssp",
 )
 
 
@@ -339,7 +342,8 @@ def analyze(screen_dir, **overrides) -> Result:
                         loaded[3], loaded[4], foldseek_bin=p["foldseek_bin"],
                         params=dict(N_PERM=p["motif_n_perm"], MAX_SPAN=p["motif_max_span"],
                                     TOUCH_CB=p["motif_touch_cb"], ID_GROUP=p["motif_id_group"],
-                                    W3DI=p["motif_w3di"], EL_FILTER=p["motif_el_filter"]))
+                                    W3DI=p["motif_w3di"], EL_FILTER=p["motif_el_filter"],
+                                    SS=p["motif_ss"]))
             rmsf = global_rmsf(cif_of, bait, binder_preds)
             identities = _identities(screen_dir, bait, cif_of)
     elif binder_preds:

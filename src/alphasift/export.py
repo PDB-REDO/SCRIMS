@@ -61,7 +61,7 @@ def _f(x, nd=None):
 def _motif_block(r, groups):
     """One interface's engine result in the website's 0.9 entry shape (viz_int
     webexport._motif_elements_confidence, minus gene/uniprot/cif per carrier)."""
-    S2 = r["panel2"]["SS"]
+    S2 = r["panel2"]["shuffle"]
     els = []
     for el in S2["elements"]:
         els.append({"positions": [int(x) for x in el["positions"]], "n_groups": int(el["n_groups"]),
@@ -79,7 +79,7 @@ def _motif_block(r, groups):
                 for x in rows]
     return {
         "panel1": [{"pos": int(c["pos"]), "n_groups": int(c["n_groups"]), "agree": _f(c["agree"]),
-                    "q": _f((c["q"] or {}).get("SS")), "letters": c["letters"]} for c in r["panel1"]],
+                    "q": _f((c["q"] or {}).get("shuffle")), "letters": c["letters"]} for c in r["panel1"]],
         "elements": els,
         "motifs": [{"id": m["id"], "elements": [int(x) for x in m["elements"]],
                     "positions": [int(x) for x in m["positions"]], "n_groups": int(m["n_groups"]),

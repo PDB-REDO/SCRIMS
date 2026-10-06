@@ -86,10 +86,13 @@ def main(argv=None):
                      choices=["c", "3di_aa", "none"],
                      help="c (default; amino acids, BLOSUM62), 3di_aa (+ Foldseek 3Di; needs Foldseek) "
                           "or none (skip the motif stage)")
+    run.add_argument("--motif-ss", dest="motif_ss", default=DEFAULTS["motif_ss"], choices=["dssp", "none"],
+                     help="secondary structure in the motif null: dssp (default, validated; needs "
+                          "mkdssp) or none (letters shuffled across the whole interface; faster)")
     run.add_argument("--foldseek-bin", dest="foldseek_bin", default=None,
                      help="Foldseek binary for --motif-engine 3di_aa (else $ALPHASIFT_FOLDSEEK or PATH)")
     for k, v in DEFAULTS.items():
-        if k in ("bait_chain", "source", "motif_engine", "foldseek_bin"):
+        if k in ("bait_chain", "source", "motif_engine", "foldseek_bin", "motif_ss"):
             continue
         if isinstance(v, bool):
             run.add_argument(f"--{k.replace('_', '-')}", dest=k,
@@ -158,7 +161,7 @@ def main(argv=None):
 
     print(f"[source: {res.source}] {len(res.preds)} predictions -> {len(res.sites)} sites "
           f"({n_sig} significant) in {len(res.interfaces)} interfaces, {n_mot} motifs "
-          f"(engine {params['motif_engine']}); wrote {a.out}")
+          f"(engine {params['motif_engine']}, null {params['motif_ss']}); wrote {a.out}")
     if res.skipped:
         print(f"skipped {len(res.skipped)} predictions (see summary.json)")
     if res.single_pair:

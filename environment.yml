@@ -6,8 +6,8 @@
 #   pytest
 #
 # AlphaSIFT needs numpy, scipy, pandas, matplotlib and biopython, plus mkdssp
-# (DSSP 4.x, conda-forge `dssp`) for the motif engine; Foldseek (bioconda) only for
-# --motif-engine 3di_aa. zstandard is needed only for .zst-compressed AFDB/ColabFold
+# (DSSP 4.x, conda-forge `dssp`) for the default motif null (--motif-ss dssp);
+# Foldseek (bioconda) only for --motif-engine 3di_aa. zstandard is needed only for .zst-compressed AFDB/ColabFold
 # downloads, and pytest only to run the test suite. scipy must be >= 1.11 for
 # scipy.stats.false_discovery_control.
 name: alphasift

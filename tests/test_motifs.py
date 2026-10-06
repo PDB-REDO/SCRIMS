@@ -14,6 +14,7 @@ from alphasift.readers.mmcif import chain_identities
 needs_dssp = pytest.mark.skipif(shutil.which("mkdssp") is None, reason="mkdssp (DSSP 4.x) not installed")
 
 
+
 # ----------------------------------------------------------------- contact pairs
 def test_pairs_reduce_to_the_matrix_row(screen):
     """The partner side reads the matrix's own pairs: their minimum PAE per bait
@@ -27,13 +28,13 @@ def test_pairs_reduce_to_the_matrix_row(screen):
 
 
 # --------------------------------------------------------------- the run itself
-@pytest.fixture
-def run(screen):
-    """One analysis with the motif stage (few permutations: these tests check
-    plumbing and shapes, not calibration)."""
-    if shutil.which("mkdssp") is None:
+@pytest.fixture(params=["dssp", "none"])
+def run(screen, request):
+    """One analysis with the motif stage, with and without secondary structure in the
+    null (few permutations: these tests check plumbing and shapes, not calibration)."""
+    if request.param == "dssp" and shutil.which("mkdssp") is None:
         pytest.skip("mkdssp (DSSP 4.x) not installed")
-    return analyze(screen, P=200, motif_n_perm=50)
+    return analyze(screen, P=200, motif_n_perm=50, motif_ss=request.param)
 
 
 def test_partners_are_listed_with_tiers(run):
@@ -46,7 +47,6 @@ def test_partners_are_listed_with_tiers(run):
     assert "p5" not in {a["prediction"] for a in run.partners[site]}
 
 
-@needs_dssp
 def test_motif_engine_runs_on_every_interface(run):
     eng = run.motifs
     assert eng["engine"] == "c"
@@ -66,15 +66,37 @@ def test_motif_stage_can_be_skipped(screen):
     assert res.partners                              # the partner side still runs
 
 
-def test_missing_mkdssp_is_an_error_not_a_crash(screen, monkeypatch):
+def test_without_dssp_no_external_program_is_needed(screen, monkeypatch):
+    """motif_ss="none": letters shuffled across the whole interface; runs with nothing on PATH."""
     import alphasift.motifs as m
     monkeypatch.setattr(m.shutil, "which", lambda name: None)
-    with pytest.raises(RuntimeError, match="mkdssp"):
+    res = analyze(screen, P=200, motif_n_perm=20, motif_ss="none")
+    assert res.motifs["engine"] == "c" and res.motifs["ifaces"]
+    assert res.motifs["params"]["SS"] == "none"
+
+
+def test_dssp_is_the_default_and_missing_mkdssp_is_a_clear_error(screen, monkeypatch):
+    from alphasift import DEFAULTS
+    import alphasift.motifs as m
+    assert DEFAULTS["motif_ss"] == "dssp"
+    monkeypatch.setattr(m.shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeError, match="mkdssp.*motif-ss none"):
         analyze(screen, P=200, motif_n_perm=20)
 
 
-# ------------------------------------------------------------- outputs
 @needs_dssp
+def test_the_two_nulls_differ_only_in_how_letters_are_pooled(screen):
+    """Same partners, same positions, same groups either way; only the shuffle changes."""
+    a = analyze(screen, P=200, motif_n_perm=50, motif_ss="dssp").motifs
+    b = analyze(screen, P=200, motif_n_perm=50, motif_ss="none").motifs
+    assert a["groups"] == b["groups"] and set(a["ifaces"]) == set(b["ifaces"])
+    for i in a["ifaces"]:
+        pa = [(c["pos"], c["n_groups"], c["agree"]) for c in a["ifaces"][i]["panel1"]]
+        pb = [(c["pos"], c["n_groups"], c["agree"]) for c in b["ifaces"][i]["panel1"]]
+        assert pa == pb                                  # observed agreement does not depend on the null
+
+
+# ------------------------------------------------------------- outputs
 def test_document_tables_figures_and_chimerax(run, tmp_path):
     import matplotlib
     matplotlib.use("Agg")
