@@ -17,8 +17,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from alphasift.export import label
-from alphasift.views import HIGHLIGHT, iface_color
+from scrims.export import label
+from scrims.views import HIGHLIGHT, iface_color
 
 
 def _spec(model, chain, residues):
@@ -34,7 +34,7 @@ def _spec(model, chain, residues):
 
 
 def write_cxc(doc, model_path_of, outdir):
-    """Write `<outdir>/alphasift.cxc`. `model_path_of(pred)` returns a readable model CIF
+    """Write `<outdir>/scrims.cxc`. `model_path_of(pred)` returns a readable model CIF
     path (a plain file; temporary paths are copied into `<outdir>/models/`)."""
     outdir = Path(outdir)
     (outdir / "models").mkdir(exist_ok=True)
@@ -52,9 +52,9 @@ def write_cxc(doc, model_path_of, outdir):
     rep = doc["predictions"][rows[0]]["id"]
     bc = doc["bait"]["chain_ids"][rep]
     bait = (doc["bait"].get("identity") or {}).get("gene") or doc["screen"]["name"]
-    L = [f"# AlphaSIFT {doc['alphasift_version']} -- {bait}: interfaces and motifs in 3-D",
+    L = [f"# SCRIMS {doc['scrims_version']} -- {bait}: interfaces and motifs in 3-D",
          f"# model #1 = {rep} ({label(doc['predictions'][rows[0]]['identity'], rep)}), the first binder in display order",
-         "# run from this folder:  chimerax alphasift.cxc   (or `open alphasift.cxc` inside ChimeraX)",
+         "# run from this folder:  chimerax scrims.cxc   (or `open scrims.cxc` inside ChimeraX)",
          f"open {local(rep)}",
          "set bgColor white", "color #1 #b9bfc7", "cartoon #1", "hide #1 atoms",
          f"transparency #1 & ~#1/{bc} 75 target c",      # the partner chain fades; the bait carries the colour
@@ -88,6 +88,6 @@ def write_cxc(doc, model_path_of, outdir):
     L += ["view #1", "# named selections: " + " ".join(
         [i["id"] for i in doc["interfaces"]] +
         [f"{i['id']}_{m['id']}" for i in doc["interfaces"] for m in (i["motif"] or {}).get("motifs", [])])]
-    path = outdir / "alphasift.cxc"
+    path = outdir / "scrims.cxc"
     path.write_text("\n".join(L) + "\n")
     return path

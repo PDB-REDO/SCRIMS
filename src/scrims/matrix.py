@@ -9,7 +9,7 @@ statistics it passes through the pTM-style pair term
 ptm_func(x, d0) = 1/(1+(x/d0)^2) with ONE fixed d0 = 10 A for every screen and
 partner (the value pDockQ2 fits; Zhu et al., Bioinformatics 2023). The
 transform flips direction (lower PAE -> higher signal) and bounds to (0, 1], so
-0 means "no contact" and alphasift.stats runs on it unchanged.
+0 means "no contact" and scrims.stats runs on it unchanged.
 
 `ptm_func`, `bait_confidence_row` and `confidence_signal` are extracted verbatim
 from viz_int.confidence, minus the `calc_d0` length-dependent d0 helper: its only
@@ -85,7 +85,7 @@ def contact_pairs(chain_ids, res_ids, cb, pae, bait_chain, d0_contact=8.0):
 
     Same selection (Cb-Cb <= d0_contact) and same direction-symmetrised PAE, so
     the per-bait-residue minimum over these pairs IS that function's raw_conf.
-    Used for the partner side of an interface (alphasift.partners) and the motif
+    Used for the partner side of an interface (scrims.partners) and the motif
     engine. Extracted verbatim from viz_int.confidence (2026-09-29).
 
     Returns (bait_res, partner_res, pae_sym): three aligned 1-D arrays, one entry

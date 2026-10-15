@@ -1,24 +1,31 @@
 """
-Static figures of the companion website's views, drawn from an `alphasift/1`
-document (alphasift.export.document), so the figures, the JSON and the HTML report
+Static figures of the companion website's views, drawn from an `scrims/1`
+document (scrims.export.document), so the figures, the JSON and the HTML report
 show the same thing.
 
   overview(doc, path)            confidence matrix (binder rows, clustered; contacted
                                  residues as columns) + RMSF and recurrence tracks +
                                  one interface lane
-  interface_card(doc, i, path)   one interface: bait-side view (Panel 1 letter columns,
-                                 height ~ sqrt(groups), * q < 0.05, hatched = untested),
-                                 motif lanes, the relations line, then per motif its
-                                 prey-sequence logo, carriers (by paralog group, with
-                                 reading direction) and element table
+  interface_card(doc, i, path)   one interface: bait-side view in the website's default
+                                 "evidence view" (Panel 1 letter columns, height ~
+                                 sqrt(groups), * q < 0.05, hatched = untested, the bait
+                                 residue as a Zappo box), motif lanes, the relations line,
+                                 then per motif its partner-sequence logo in the default
+                                 "classic" view (bits, group-weighted, exact small-sample
+                                 correction, scaled to its tallest column) over the
+                                 per-carrier table in the same columns
   partner_strips(doc, i, path)   every prey at the interface with its tiered residue
                                  ranges (H solid, M light, L dashed), motif residues bold
 
-Colours, sizes and rules follow the website (webiste_viz_int src/lib/colors.ts and
-src/components/{Heatmap,MotifEngineView}.tsx, 2026-10-02): Greens ramp for confidence,
+Colours, sizes and rules follow the website (webiste_viz_int src/lib/{colors,logo}.ts and
+src/components/{Heatmap,MotifEngineView}.tsx, 2026-10-07): Greens ramp for confidence,
 purple ramp for RMSF, eight categorical interface hues keyed by interface order
-(significant = solid, not = hatched), amino acids in Zappo groups with H separate.
-Colour is never the only cue: every band, column and chip also carries text.
+(significant = solid, not = hatched), amino acids in the official Jalview Zappo colours
+(logo letters filled + thin dark outline; small letters a coloured box + black letter),
+selection highlight cyan. Logo letters are stacked contiguously from the baseline,
+largest on top, each fitted to its slot from its exact outline; shares too small to
+draw form one grey band on top (scrims.logo). Colour is never the only cue: every
+band, column and chip also carries text.
 
 Layout is in pixels on one axes per figure (1 px = 1 data unit at dpi 100); `dpi`
 sets the output resolution.
@@ -30,16 +37,25 @@ import math
 
 import numpy as np
 
-from alphasift.export import label
+from scrims.export import label
+from scrims.logo import bits_axis_max, build_stack, group_weighted, info_content
 
 CONF_LO, CONF_HI = "#f7fcf5", "#00441b"
 RMSF_LO, RMSF_HI = "#efedf5", "#3f007d"
-HIGHLIGHT = "#ffc400"
+def motif_label(mid):
+    """'M1' -> 'Motif 1' (2026-10-12, user's PI: "M1 is not obvious"; as the report and website); data ids stay M1."""
+    return f"Motif {mid[1:]}" if mid[:1] == "M" and mid[1:].isdigit() else mid
+
+
+HIGHLIGHT = "#00ffff"          # selection colour, as the website's (gold collided with Zappo aromatic)
 INTERFACE_COLORS = ["#2a78d6", "#d06f00", "#d4609a", "#a0662f", "#1a9fc0", "#d4462c", "#7b61d9", "#c2566b"]
-AA_GROUPS = [("aliphatic / hydrophobic", "ILVAM", "#242c35"), ("aromatic", "FWY", "#a169eb"),
-             ("positive", "KR", "#2d3ccb"), ("histidine", "H", "#0e9f93"), ("negative", "DE", "#ec5560"),
-             ("hydrophilic", "STNQ", "#335309"), ("conformationally special", "PG", "#904680"),
-             ("cysteine", "C", "#847f13")]
+# official Jalview Zappo (jalview.org/help/html/colourSchemes/zappo.html)
+AA_GROUPS = [("aliphatic / hydrophobic", "ILVAM", "#ffafaf"), ("aromatic", "FWY", "#ffc800"),
+             ("positive", "KRH", "#6464ff"), ("negative", "DE", "#ff0000"),
+             ("hydrophilic", "STNQ", "#00ff00"), ("conformationally special", "PG", "#ff00ff"),
+             ("cysteine", "C", "#ffff00")]
+LETTER_OUTLINE = "#1f2329"
+OTHER_FILL, GREY_LETTER = "#c3c7cd", "#d3d7dc"
 AA_COLOR = {a: c for _, letters, c in AA_GROUPS for a in letters}
 INK, INK2, INK3, LINE = "#191c20", "#4a5058", "#7c828b", "#e2e4e8"
 Q_SIG = 0.05
@@ -49,7 +65,7 @@ TIER_STYLE = {"H": dict(fc="#25603c", ec="#25603c", ls="-", tc="white"),     # t
 
 
 def aa_color(ch):
-    return AA_COLOR.get(ch.upper(), "#8a9099")
+    return AA_COLOR.get(ch.upper(), "#c3c7cd")
 
 
 def iface_color(idx):
@@ -101,10 +117,9 @@ class _Canvas:
         self.ax.plot(xs, ys, **kw)
 
     def glyph(self, ch, x, y_bottom, w, h, color):
-        """Letter `ch` stretched into the w x h box whose bottom edge is at y_bottom
-        (the website's Glyph: same horizontal scale for every letter, wide ones squeezed)."""
-        if h < 1.2:
-            return
+        """Letter `ch` with its exact outline fitted into the w x h box whose bottom edge is
+        at y_bottom (the website's Glyph: height exact; width 86 % of the column for an
+        H-wide letter, wide letters squeezed to at most 94 %), filled + thin dark outline."""
         from matplotlib.font_manager import FontProperties
         from matplotlib.patches import PathPatch
         from matplotlib.textpath import TextPath
@@ -113,11 +128,29 @@ class _Canvas:
         p = TextPath((0, 0), ch, size=10, prop=fp)
         cap = TextPath((0, 0), "H", size=10, prop=fp).get_extents()
         bb = p.get_extents()
-        sx = min(0.9 * w / max(cap.width, 1e-6), 0.95 * w / max(bb.width, 1e-6))
+        sx = min(0.86 * w / max(cap.width, 1e-6), 0.94 * w / max(bb.width, 1e-6))
         sy = h / max(bb.height, 1e-6)
         t = (Affine2D().translate(-bb.x0 - bb.width / 2, -bb.y0).scale(sx, -sy)
              .translate(x + w / 2, y_bottom))
-        self.ax.add_patch(PathPatch(t.transform_path(p), fc=color, ec="none", lw=0))
+        self.ax.add_patch(PathPatch(t.transform_path(p), fc=color, ec=LETTER_OUTLINE,
+                                    lw=0.25 if h < 8 else 0.4))
+
+    def stack(self, letters, x, y_base, w, grey=False):
+        """[(letter, height)] summing to the column height, baseline at y_base: visible letters
+        contiguous from the baseline, largest on top; too-small shares pooled into one grey band."""
+        vis, other, _ = build_stack(letters)
+        y = y_base
+        for l, h in vis:
+            self.glyph(l, x, y, w, h, GREY_LETTER if grey else aa_color(l))
+            y -= h
+        if other > 0.3:
+            self.rect(x + 2, y - other, w - 4, other, fc=OTHER_FILL, lw=0)
+
+    def aabox(self, ch, x, y_top, w, h, size=7):
+        """A small residue, Jalview-style: Zappo box, black letter."""
+        self.rect(x, y_top, w, h, fc=aa_color(ch), lw=0)
+        self.text(x + w / 2, y_top + h / 2, ch, size=size, color="#111418", ha="center", va="center",
+                  weight="bold", family="monospace")
 
     def crop(self, h):
         self.H = int(h)
@@ -239,8 +272,7 @@ def overview(doc, path, dpi=200):
 
 # ----------------------------------------------------------------------- interface card
 COL_W, JUMP_W, ROW_GROUPS, ROW_SIG, LOGO_H, ROW_BAIT, ROW_NUM, LANE_H, LANE_GAP = 16, 5, 12, 12, 80, 16, 26, 13, 4
-PCOL_W, GAP_W, GUTTER = 18, 30, 110
-MIN_SHARE = 0.04
+PCOL_W, GAP_W, GUTTER, PLEFT, PLOGO_H, CROW_H = 18, 30, 110, 210, 80, 16
 
 
 def _bait_side_height(entry):
@@ -277,22 +309,17 @@ def _draw_bait_side(cv, entry, seq, x0, y0):
             cv.rect(X, y_logo, COL_W, LOGO_H, fc="none", ec="#d6d9de", lw=0, hatch="////")
         cv.text(X + COL_W / 2, y0 + ROW_GROUPS - 3, str(c["n_groups"]), size=6, ha="center",
                 color="#a3a9b1" if untested else INK2)
-        y = y_logo + LOGO_H
-        for l, s in sorted(c["letters"].items(), key=lambda kv: kv[1]):     # smallest first, largest on top
-            if s < MIN_SHARE:
-                continue
-            h = s * col_h
-            cv.glyph(l, X, y, COL_W, h, "#b3b8bf" if untested else aa_color(l))
-            y -= h
+        tot = sum(c["letters"].values()) or 1
+        cv.stack([(l, v / tot * col_h) for l, v in c["letters"].items()], X, y_logo + LOGO_H, COL_W, grey=untested)
         b = seq[c["pos"] - 1] if seq and c["pos"] - 1 < len(seq) else "?"
-        cv.text(X + COL_W / 2, y_bait + 12, b, size=8, color=aa_color(b), ha="center", weight="bold")
+        cv.aabox(b, X + 1.5, y_bait + 2, COL_W - 3, 12)
         cv.text(X + COL_W / 2, y_num + 2, str(c["pos"]), size=6, color=INK3, ha="center", va="top",
                 rotation=90, family="monospace")
     col_of = {c["pos"]: k for k, c in enumerate(cols)}
     for li, m in enumerate(entry["motifs"]):
         y = y_lanes + li * (LANE_H + LANE_GAP)
         idx = [col_of[p] for p in m["positions"] if p in col_of]
-        cv.text(x0 - 8, y + LANE_H / 2, m["id"], size=7, color=INK, ha="right", va="center", weight="bold")
+        cv.text(x0 - 8, y + LANE_H / 2, motif_label(m["id"]), size=7, color=INK, ha="right", va="center", weight="bold")
         if not idx:
             continue
         a, b = x0 + xs[min(idx)], x0 + xs[max(idx)] + COL_W
@@ -302,36 +329,131 @@ def _draw_bait_side(cv, entry, seq, x0, y0):
     return (xs[-1] + COL_W) if xs else COL_W
 
 
+def _partner_cols(al):
+    """Per logo column: ([(letter, f)], n carriers, bits), or None for a gap column. Every carrier counts
+    (viz_int 2026-10-08: paralogs counted once hid VAPA FFAT's second F), as on the website."""
+    out = []
+    for c in al["columns"]:
+        if c["kind"] == "gap":
+            out.append(None)
+            continue
+        o = str(c["offset"])
+        items = [(car["cells"][o], car["id"]) for car in al["carriers"] if o in (car.get("cells") or {})]
+        freq, n = group_weighted(items)
+        out.append((freq, n, info_content([f for _, f in freq], n)))
+    return out
+
+
 def _logo_height(al):
-    return 12 + max(48, min(96, al["n"] * 8)) + 12 + 4
+    """Height _draw_partner_logo uses (axis note + groups row + logo + offsets); kept for callers
+    that lay out the logo themselves (paper/make_figure1.py)."""
+    return 16 + 12 + PLOGO_H + 12 + 6
+
+
+def _logo_width(al):
+    return sum(GAP_W if c["kind"] == "gap" else PCOL_W for c in al["columns"])
 
 
 def _draw_partner_logo(cv, al, x0, y0):
-    ph = max(48, min(96, al["n"] * 8))
-    y_logo, y_off = y0 + 12, y0 + 12 + ph + 12
-    cv.text(x0 - 8, y0 + 6, f"k of {al['n']}", size=6.5, color=INK3, ha="right", va="center")
-    cv.text(x0 - 8, y_logo + ph / 2, "partner residues", size=6.5, color=INK3, ha="right", va="center")
-    cv.text(x0 - 8, y_logo + ph + 7, "offset", size=6.5, color=INK3, ha="right", va="center")
+    """The website's default partner-side view: classic logo in bits, y axis scaled to the
+    tallest column (rounded up to 0.5 bit). Returns the height used."""
+    pc = _partner_cols(al)
+    ics = [d[2] if d else 0.0 for d in pc]
+    amax = bits_axis_max(ics)
+    empty = any(d is not None for d in pc) and all(d is None or d[1] <= 1 for d in pc)
+    cv.text(16, y0 + 8, "classic logo is empty: every column comes from a single carrier "
+            "(one sequence carries no information)" if empty else
+            f"classic logo scaled to the tallest column (max {max(ics + [0]):.2f} bits; axis 0–{amax:.1f} bits)"
+            + ("; antiparallel to the bait, shown N→C" if al.get("flipped") else ""),
+            size=6.5, color=INK3)
+    y0 += 16
+    y_logo, y_off = y0 + 12, y0 + 12 + PLOGO_H + 12
+    cv.text(x0 - 8, y0 + 6, "carriers", size=6.5, color=INK3, ha="right", va="center")
+    cv.text(x0 - 34, y_logo + PLOGO_H / 2, "bits", size=6.5, color=INK3, ha="right", va="center")
+    step = 0.5 if amax <= 2.5 else 1.0
+    b = 0.0
+    while b <= amax + 1e-9:
+        cv.text(x0 - 8, max(y_logo + 3, y_logo + PLOGO_H - b / amax * PLOGO_H), f"{b:.1f}" if step < 1 else f"{b:g}",
+                size=5.5, color=INK3, ha="right", va="center", family="monospace")
+        b += step
+    cv.text(x0 - 8, y_logo + PLOGO_H + 7, "offset", size=6.5, color=INK3, ha="right", va="center")
+    cv.line([x0, x0 + _logo_width(al)], [y_logo + PLOGO_H] * 2, color="#d0d3d9", lw=0.8)
     x = x0
-    for c in al["columns"]:
+    for c, d in zip(al["columns"], pc):
         if c["kind"] == "gap":
-            cv.text(x + GAP_W / 2, y_logo + ph - 4, "⋯", size=9, color=INK3, ha="center")
+            cv.text(x + GAP_W / 2, y_logo + PLOGO_H - 4, "⋯", size=9, color=INK3, ha="center")
             cv.text(x + GAP_W / 2, y_off, f"{c['skipped']} aa", size=6, color=INK3, ha="center")
             x += GAP_W
             continue
-        if c["offset"] == 0:
-            cv.rect(x, y_logo - 1, PCOL_W, ph + 2, fc="#eef0f3", lw=0)
-        cv.text(x + PCOL_W / 2, y0 + 9, str(c["k"]) if c["k"] else "·", size=6, ha="center",
-                color=INK2 if c["k"] else "#c3c7cd")
-        y = y_logo + ph
-        for l, n in reversed(c["counts"]):
-            h = n / max(1, al["n"]) * ph
-            cv.glyph(l, x, y, PCOL_W, h, aa_color(l))
-            y -= h
+        freq, n, ic = d
+        cv.text(x + PCOL_W / 2, y0 + 9, str(n) if n else "·", size=6, ha="center", color=INK2 if n else "#c3c7cd")
+        col_h = ic / amax * PLOGO_H
+        cv.stack([(l, f * col_h) for l, f in freq], x, y_logo + PLOGO_H, PCOL_W)
         cv.text(x + PCOL_W / 2, y_off, f"+{c['offset']}" if c["offset"] > 0 else str(c["offset"]), size=6,
                 color=INK if c["offset"] == 0 else INK3, ha="center", weight="bold" if c["offset"] == 0 else "normal")
         x += PCOL_W
-    return x - x0
+    return _logo_height(al)
+
+
+def _letters_of(partners):
+    """prediction -> {partner residue: letter}, from the interface's partner ranges."""
+    out = {}
+    for p in partners or []:
+        m = {}
+        for a, b, _t, seq in p["ranges"]:
+            for r in range(a, b + 1):
+                m[r] = seq[r - a] if r - a < len(seq) else "?"
+        out[p["id"]] = m
+    return out
+
+
+def _draw_carrier_table(cv, al, x0, y0, name, uni, seqs):
+    """One row per carrier, in the logo's columns: gene, UniProt, paralog group (gN when the
+    group has > 1 carrier here), reading arrow, residue range, its letter at each offset
+    ('·' when absent) and its actual segment with the motif residues bold. Returns height."""
+    gno, gsz = {}, {}
+    for c in al["carriers"]:
+        gno.setdefault(c["group"], len(gno) + 1)
+        gsz[c["group"]] = gsz.get(c["group"], 0) + 1
+    rows = sorted(al["carriers"], key=lambda c: gno[c["group"]])
+    seg_x = x0 + _logo_width(al) + 10
+    cv.text(16, y0 + 9, f"Carriers ({len(rows)})", size=7, color=INK2, weight="bold")
+    y = y0 + 14
+    for car in rows:
+        cv.line([16, seg_x + 6 * (car["residues"][-1] - car["residues"][0] + 1) + 10], [y, y], color=LINE, lw=0.5)
+        yc = y + CROW_H / 2
+        nm = name.get(car["id"], car["id"])
+        cv.text(16, yc, nm[:13], size=7, color=INK, va="center", weight="bold")
+        u = uni.get(car["id"])
+        if u and u != nm:
+            cv.text(84, yc, u, size=5.8, color=INK3, va="center", family="monospace")
+        if gsz[car["group"]] > 1:
+            cv.text(126, yc, f"g{gno[car['group']]}", size=5.8, color=INK2, va="center", family="monospace",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="none", ec=INK3, ls="--", lw=0.5))
+        cv.text(146, yc, "→" if car["dir"] == 1 else "←", size=7.5, color=INK2, va="center", weight="bold")
+        lo, hi = car["residues"][0], car["residues"][-1]
+        cv.text(x0 - 6, yc, str(lo) if lo == hi else f"{lo}–{hi}", size=6, color=INK2, ha="right", va="center",
+                family="monospace")
+        x = x0
+        cells = car.get("cells") or {}
+        for c in al["columns"]:
+            if c["kind"] == "gap":
+                x += GAP_W
+                continue
+            l = cells.get(str(c["offset"]))
+            if l:
+                cv.aabox(l, x + 2, y + 2, PCOL_W - 4, CROW_H - 4, size=6)
+            else:
+                cv.text(x + PCOL_W / 2, yc, "·", size=7, color="#c3c7cd", ha="center", va="center")
+            x += PCOL_W
+        mres, sq = set(car["residues"]), seqs.get(car["id"], {})
+        for k, r in enumerate(range(lo, hi + 1)):
+            l = sq.get(r)
+            cv.text(seg_x + 6 * k, yc, "·" if l is None else l, size=6.5, va="center", family="monospace",
+                    color="#c3c7cd" if l is None else ("#111418" if r in mres else INK3),
+                    weight="bold" if r in mres else "normal")
+        y += CROW_H
+    return y - y0 + 4
 
 
 def _wrap(cv, items, x0, y, max_w, size=7, gap=10):
@@ -354,19 +476,22 @@ def interface_card(doc, iface_index, path, dpi=200):
     i = doc["interfaces"][iface_index]
     entry = i["motif"]
     name = {p["id"]: label(p["identity"], p["id"]) for p in i["partners"] or []}
+    uni = {p["id"]: (p["identity"] or {}).get("uniprot") for p in i["partners"] or []}
+    seqs = _letters_of(i["partners"])
     W_min = 760
     blocks_h = 120
     if entry:
         bait_w = GUTTER + 20 + len(entry["panel1"]) * (COL_W + JUMP_W)
         blocks_h += _bait_side_height(entry) + 40
         for m in entry["motifs"]:
-            blocks_h += 40 + _logo_height(entry["alignments"][m["id"]]) + 16 * (2 + len(m["carriers"]) // 6) \
-                + 14 * (len(m["elements"]) + 2) + 20
+            blocks_h += 40 + 16 + 12 + PLOGO_H + 30 + 20 + CROW_H * len(entry["alignments"][m["id"]]["carriers"]) + 30
     else:
         bait_w = W_min
-    widths = [bait_w] + ([GUTTER + 20 + sum(GAP_W if c["kind"] == "gap" else PCOL_W
-                                             for c in entry["alignments"][m["id"]]["columns"])
-                          for m in entry["motifs"]] if entry else [])
+
+    def _seg_len(al):
+        return max([c["residues"][-1] - c["residues"][0] + 1 for c in al["carriers"]] or [0])
+    widths = [bait_w] + ([16 + PLEFT + _logo_width(entry["alignments"][m["id"]]) + 20
+                          + 6 * _seg_len(entry["alignments"][m["id"]]) for m in entry["motifs"]] if entry else [])
     W = int(max(W_min, max(widths) + 30))
     cv = _Canvas(W, int(blocks_h + 40))
     c = iface_color(iface_index)
@@ -384,7 +509,7 @@ def interface_card(doc, iface_index, path, dpi=200):
     p1 = entry["panel1"]
     n_t = sum(1 for x in p1 if x["q"] is not None)
     n_s = sum(1 for x in p1 if x["q"] is not None and x["q"] < Q_SIG)
-    cv.text(16, y, "Motifs — bait side", size=9, weight="bold")
+    cv.text(16, y, "Interface – Bait-side view", size=9, weight="bold")
     y += 15
     cv.text(16, y, f"{len(p1)} bait residues · {n_t} tested · {n_s} with q < {Q_SIG} · partners used "
             f"{entry['partners_used']}/{entry['partners_total']} · shuffle control: "
@@ -398,7 +523,7 @@ def interface_card(doc, iface_index, path, dpi=200):
         cv.text(16, y + 10, "No motif found in this interface (no element passed the engine's tests) — "
                 "a valid result, not missing data.", size=8, color=INK2)
     elif len(entry["motifs"]) > 1:
-        rel = " · ".join(f"{r['a']}–{r['b']} {'same pocket' if r['relation'] == 'same_pocket' else 'separate sites'}"
+        rel = " · ".join(f"{motif_label(r['a'])}–{motif_label(r['b'])} {'same pocket' if r['relation'] == 'same_pocket' else 'separate sites'}"
                          f" · {'different (competing)' if r['status'] == 'different' else 'unresolved, too few carriers to tell'}"
                          for r in entry["motif_relations"])
         cv.text(16, y + 10, rel, size=7.5, color=INK2)
@@ -407,12 +532,11 @@ def interface_card(doc, iface_index, path, dpi=200):
         al = entry["alignments"][m["id"]]
         cv.line([16, W - 16], [y - 8, y - 8], color=LINE, lw=0.8)
         head = (f"{len(m['positions'])} bait res · {m['n_groups']} group{'s' if m['n_groups'] != 1 else ''} · "
-                f"{len(m['carriers'])} carrier{'s' if len(m['carriers']) != 1 else ''} · "
-                f"{len(m['elements'])} element{'s' if len(m['elements']) != 1 else ''}"
+                f"{len(m['carriers'])} carrier{'s' if len(m['carriers']) != 1 else ''}"
                 + (" · bipartite" if m["bipartite"] else "")
                 + "".join(f" · linked by {x}" for x in m["linked_by"]))
-        cv.text(16, y + 4, m["id"], size=9, weight="bold")
-        cv.text(44, y + 4, head, size=7.5, color=INK2)
+        cv.text(16, y + 4, motif_label(m["id"]), size=9, weight="bold")
+        cv.text(66, y + 4, head, size=7.5, color=INK2)
         note = f"Aligned on bait residue {al['anchor']}."
         if any(x["dir"] == -1 for x in al["carriers"]):
             note += " ← carriers bind antiparallel and are read backwards (C→N)."
@@ -424,36 +548,33 @@ def interface_card(doc, iface_index, path, dpi=200):
             note += f" {al['missing_letters']} residue(s) outside the listed ranges show as ?."
         cv.text(16, y + 18, note, size=7, color=INK3)
         y += 26
-        _draw_partner_logo(cv, al, GUTTER + 16, y)
-        y += _logo_height(al) + 6
-        groups = {}
-        for car in al["carriers"]:
-            groups.setdefault(car["group"], []).append(car)
-        chips = []
-        for g in groups.values():
-            t = "  ".join(f"{name.get(x['id'], x['id'])} {'→' if x['dir'] == 1 else '←'}"
-                          + ("" if x["aligned"] else " (not in logo)") for x in g)
-            chips.append((f"[{t}]" if len(g) > 1 else t, INK, "normal"))
-        cv.text(16, y, "carriers", size=6.5, color=INK3)
-        y = _wrap(cv, chips, 60, y, W - 80)
-        cv.text(16, y, "el.     bait residues                         groups   q          or.   spacing   carriers",
-                size=6.5, color=INK3, family="monospace")
-        y += 13
-        arrow = {"parallel": "→", "antiparallel": "←", "mixed": "↔"}
-        for ei in m["elements"]:
-            e = entry["elements"][ei]
-            pos = compact(e["positions"])
-            cv.text(16, y, f"E{ei + 1:<6}{pos[:36]:<38}{e['n_groups']:<9}{fmt_q(e['q']):<11}"
-                    f"{arrow.get(e['orientation'], '?'):<6}{round((e['consistency'] or 0) * 100):>3}%      "
-                    f"{len(e['carriers'])}", size=6.5, color=INK, family="monospace")
-            y += 13
-        y += 22
+        y += _draw_partner_logo(cv, al, 16 + PLEFT, y)
+        y += _draw_carrier_table(cv, al, 16 + PLEFT, y, name, uni, seqs) + 16
     cv.text(16, y, f"Motif engine {doc['params'].get('motif_engine')} · contact Cβ–Cβ ≤ "
             f"{doc['params'].get('motif_touch_cb')} Å · partners ≥ {round(100 * doc['params'].get('motif_id_group', 0))}% "
             f"identical = one group · {doc['params'].get('motif_n_perm')} letter shuffles", size=6.5, color=INK3)
-    cv.text(16, y + 12, f"column height ∝ √ groups (busiest = full) · ✱ q < {Q_SIG} vs letter shuffles · hatched = "
-            "untested (< 3 groups) · → carrier read N→C, ← read backwards (antiparallel)", size=6.5, color=INK3)
-    cv.crop(y + 24)
+    for k, t in enumerate([
+            "bait side (evidence view): column height ∝ √ groups (busiest = full), letters = shares",
+            f"✱ q < {Q_SIG} vs letter shuffles · hatched = untested (< 3 groups) · grey band on top = letters too small to draw",
+            "partner side (classic logo): bits = log2 20 − (H + e(n)), exact small-sample correction e(n); "
+            "related partners count once",
+            "→ carrier read N→C, ← read backwards (antiparallel, flipped) · bold = motif residues, grey · = outside "
+            "the partner's listed ranges"]):
+        cv.text(16, y + 12 * (k + 1), t, size=6.5, color=INK3)
+    y += 48
+    cv.text(16, y + 22, "Amino-acid colours:", size=6.5, color=INK2, va="center")
+    x0_ = 178
+    x, yl = x0_, y + 22
+    for nm_, letters, _c in AA_GROUPS:
+        need = 11 * len(letters) + 4 + 4.4 * len(nm_) + 12
+        if x > x0_ and x + need > W - 16:
+            x, yl = x0_, yl + 14
+        for k, ch in enumerate(letters):
+            cv.aabox(ch, x + 11 * k, yl - 7, 10, 10, size=5.5)
+        x += 11 * len(letters) + 4
+        cv.text(x, yl, nm_, size=6, color=INK3, va="center")
+        x += 4.4 * len(nm_) + 12
+    cv.crop(yl + 10)
     cv.save(path, dpi)
 
 

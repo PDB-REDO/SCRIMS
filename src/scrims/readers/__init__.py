@@ -3,7 +3,7 @@ Input dispatch: one AlphaFold prediction, whatever produced it, reduced to the
 four arrays the matrix needs.
 
 Every reader returns a `Prediction` with per-token chain ids, residue ids, Cbeta
-coordinates and a (T, T) PAE matrix, plus the per-chain sequences AlphaSIFT uses
+coordinates and a (T, T) PAE matrix, plus the per-chain sequences SCRIMS uses
 to identify the bait. Adding a format means adding a reader here; nothing
 downstream changes.
 
@@ -13,7 +13,7 @@ Formats:
               <id>-model_v1.cif[.zst] + <id>-predicted_aligned_error_v1.json[.zst]
   alphabridge an AlphaBridge run's alphabridge_data.json carrying a precomputed
               per-bait-residue reduction (for screens whose raw PAE is not kept
-              on disk); handled in alphasift.screen, since it bypasses the arrays
+              on disk); handled in scrims.screen, since it bypasses the arrays
 
 AlphaBridge is never required: it is one optional way in, not a dependency.
 """
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import numpy as np
 
-from alphasift.readers.mmcif import parse_cif_cb, load_confidences
-from alphasift.readers.afdb import load_entry
+from scrims.readers.mmcif import parse_cif_cb, load_confidences
+from scrims.readers.afdb import load_entry
 
 AA3_TO_1 = {
     'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C', 'GLN': 'Q',
@@ -131,7 +131,7 @@ def load_sequences(screen_dir, name: str) -> dict[str, str] | None:
     for suffix in ("-model_v1.cif.zst", "-model_v1.cif"):
         cif = screen / f"{name}{suffix}"
         if cif.exists():
-            from alphasift.readers.afdb import parse_cif, read_maybe_zst
+            from scrims.readers.afdb import parse_cif, read_maybe_zst
             chain_ids, res_ids, comps, cb, _plddt = parse_cif(read_maybe_zst(str(cif)).decode())
             return Prediction(name, "afdb", chain_ids, res_ids, cb,
                               np.zeros((0, 0)), comps).chain_sequences()
@@ -150,7 +150,7 @@ def model_cif(screen_dir, name: str, tmpdir) -> Path:
         return screen / f"{name}-model_v1.cif"
     zst = screen / f"{name}-model_v1.cif.zst"
     if zst.exists():
-        from alphasift.readers.afdb import read_maybe_zst
+        from scrims.readers.afdb import read_maybe_zst
         out = Path(tmpdir) / f"{name}_model.cif"
         out.write_bytes(read_maybe_zst(str(zst)))
         return out
@@ -162,7 +162,7 @@ def load_atoms(screen_dir, name: str, chain: str) -> dict:
 
     Needed only by the 3-D interface merge, which works on the bait chain.
     """
-    from alphasift.readers.mmcif import parse_cif_atoms
+    from scrims.readers.mmcif import parse_cif_atoms
 
     screen = Path(screen_dir)
     cifs = sorted((screen / name).glob("*_model.cif"))
@@ -171,7 +171,7 @@ def load_atoms(screen_dir, name: str, chain: str) -> dict:
     for suffix in ("-model_v1.cif.zst", "-model_v1.cif"):
         cif = screen / f"{name}{suffix}"
         if cif.exists():
-            from alphasift.readers.afdb import read_maybe_zst
+            from scrims.readers.afdb import read_maybe_zst
             return parse_cif_atoms(cif, chain=chain,
                                    text=read_maybe_zst(str(cif)).decode())
     raise FileNotFoundError(f"no structure file for {name} in {screen}")

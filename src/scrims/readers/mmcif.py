@@ -200,7 +200,7 @@ def parse_cif_atoms(cif_path: str | Path, chain: str | None = None,
     """{residue number: (n_atoms, 3) heavy-atom coordinates} for one chain.
 
     The 3-D interface merge needs heavy atoms, not just Cbeta. Written against
-    the same `_atom_site` loop `parse_cif_cb` reads, so AlphaSIFT needs no second
+    the same `_atom_site` loop `parse_cif_cb` reads, so SCRIMS needs no second
     structure library; `chain=None` returns {chain: {res: coords}} for all chains.
 
     Only `ATOM` records are kept, which is how the reference implementation's

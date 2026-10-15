@@ -1,20 +1,20 @@
 """
 Command line: one screen in, a figure and the called sites out.
 
-    alphasift run SCREEN_DIR -o OUTDIR
+    scrims run SCREEN_DIR -o OUTDIR
 
 Writes, in OUTDIR:
-    alphasift.json   everything below in one versioned document (schema alphasift/1)
+    scrims.json   everything below in one versioned document (schema scrims/1)
     report.html      self-contained page mirroring the companion website (open offline)
     overview.png     the website's heatmap view: matrix + RMSF/recurrence tracks + interface lane
     interfaces/      per interface: <I>.png (bait-side view, motif lanes, motif logos,
-                     carriers, elements) and <I>_partners.png (preys with tiered ranges)
-    alphasift.cxc    ChimeraX script: interfaces and motif residues in 3-D (models/ beside it)
+                     per-carrier table) and <I>_partners.png (preys with tiered ranges)
+    scrims.cxc    ChimeraX script: interfaces and motif residues in 3-D (models/ beside it)
     matrix.png       the paper figure: matrix + summed-signal track + marked sites
     sites.tsv        one row per called site, with significance, channel and interface
     interfaces.tsv   one row per 3-D interface, with its member segments
     partners.tsv     one row per interface x prey: tiered residue ranges
-    bait_side.tsv    one row per interface x bait residue: groups, agreement, q, prey letters
+    bait_side.tsv    one row per interface x bait residue: groups, agreement, q, prey letters (raw and group-weighted)
     motifs.tsv       one row per motif: bait residues, groups, carriers, prey consensus
     matrix.npz       M_pae (raw Angstrom, NaN = no contact), M_signal, res_ids, preds
     summary.json     bait, parameters, counts, and every skipped prediction with a reason
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from alphasift import DEFAULTS, analyze
+from scrims import DEFAULTS, analyze
 
 SITE_COLUMNS = ["res_start", "res_end", "interface", "channel", "significant",
                 "recurrent", "q_recur", "recurrent_core", "strength_significant",
@@ -66,12 +66,12 @@ def _fmt(v):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="alphasift", description=__doc__,
+    ap = argparse.ArgumentParser(prog="scrims", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     run = sub.add_parser("run", help="analyse one screen directory")
     run.add_argument("screen_dir", type=Path)
-    run.add_argument("-o", "--out", type=Path, default=Path("alphasift_out"))
+    run.add_argument("-o", "--out", type=Path, default=Path("scrims_out"))
     run.add_argument("--no-figure", action="store_true", help="skip the figure")
     run.add_argument("--figure-format", default="png", choices=["png", "pdf", "svg"])
     run.add_argument("--max-rows", type=int, default=None,
@@ -90,9 +90,12 @@ def main(argv=None):
                      help="secondary structure in the motif null: dssp (default, validated; needs "
                           "mkdssp) or none (letters shuffled across the whole interface; faster)")
     run.add_argument("--foldseek-bin", dest="foldseek_bin", default=None,
-                     help="Foldseek binary for --motif-engine 3di_aa (else $ALPHASIFT_FOLDSEEK or PATH)")
+                     help="Foldseek binary for --motif-engine 3di_aa (else $SCRIMS_FOLDSEEK or PATH)")
+    run.add_argument("--bait-domains", dest="bait_domains", default=DEFAULTS["bait_domains"],
+                     help="the bait's Pfam / InterPro accessions (e.g. PF00635,IPR000535): evidence for the "
+                          "known-motif suggestion (does the bait carry the domain ELM lists?); optional")
     for k, v in DEFAULTS.items():
-        if k in ("bait_chain", "source", "motif_engine", "foldseek_bin", "motif_ss"):
+        if k in ("bait_chain", "source", "motif_engine", "foldseek_bin", "motif_ss", "bait_domains"):
             continue
         if isinstance(v, bool):
             run.add_argument(f"--{k.replace('_', '-')}", dest=k,
@@ -109,11 +112,11 @@ def main(argv=None):
     res = analyze(a.screen_dir, **params)
     a.out.mkdir(parents=True, exist_ok=True)
 
-    from alphasift.export import document, write_json, write_tables
+    from scrims.export import document, write_json, write_tables
     doc = document(res)
-    write_json(doc, a.out / "alphasift.json")
+    write_json(doc, a.out / "scrims.json")
     write_tables(doc, a.out)
-    from alphasift.report import write_report
+    from scrims.report import write_report
     write_report(doc, a.out / "report.html")
     n_mot = sum(len((i["motif"] or {}).get("motifs", [])) for i in doc["interfaces"])
 
@@ -138,7 +141,7 @@ def main(argv=None):
     }, indent=2, default=str))
 
     if not a.no_figure and res.M_signal.shape[0]:
-        from alphasift.figure import figure
+        from scrims.figure import figure
         fig = figure(res, a.out / f"matrix.{a.figure_format}", max_rows=a.max_rows)
         try:
             import matplotlib.pyplot as plt
@@ -146,7 +149,7 @@ def main(argv=None):
         except Exception:
             pass
         if doc["matrix"]["row_order"]:
-            from alphasift import views
+            from scrims import views
             views.overview(doc, a.out / f"overview.{a.figure_format}")
             (a.out / "interfaces").mkdir(exist_ok=True)
             for k, i in enumerate(doc["interfaces"]):
@@ -154,8 +157,8 @@ def main(argv=None):
                 views.partner_strips(doc, k, a.out / "interfaces" / f"{i['id']}_partners.{a.figure_format}")
     if doc["matrix"]["row_order"]:
         import tempfile
-        from alphasift import readers
-        from alphasift.chimerax import write_cxc
+        from scrims import readers
+        from scrims.chimerax import write_cxc
         with tempfile.TemporaryDirectory() as tmp:
             write_cxc(doc, lambda pr: readers.model_cif(a.screen_dir, pr, tmp), a.out)
 

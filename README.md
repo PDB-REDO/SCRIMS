@@ -1,6 +1,6 @@
-# AlphaSIFT — statistical inference of functional interaction sites and shared motifs from structure-prediction screens
+# SCRIMS — statistical inference of functional interaction sites and shared motifs from structure-prediction screens
 
-AlphaSIFT turns a set of AlphaFold predictions that share one **bait** protein into
+SCRIMS turns a set of AlphaFold predictions that share one **bait** protein into
 three things:
 
 1. a **confidence matrix** — one row per partner prediction, one column per bait
@@ -87,10 +87,15 @@ default) or by amino acid plus the partner's Foldseek 3Di state at weight 1/3
 shuffle within 1e-9 of the observed score counts as a tie, and p = (k + 1)/(n + 1),
 BH-corrected. By default (`--motif-ss dssp`) letters are shuffled only **within
 DSSP class** (helix / strand / other), so "every partner binds with a helix" is not
-a motif; this is the validated null and needs `mkdssp`. `--motif-ss none` shuffles
-across the whole interface instead: no external program and several times faster,
-but not validated (on four screens it kept 59 of 61 significant bait-side columns,
-found 64, and merged RHOQ's three motifs into one). The **bait side** tests, per bait residue touched
+a motif; this is the default null and needs `mkdssp`. `--motif-ss none` shuffles
+across the whole interface instead: no external program and several times faster.
+Both were benchmarked in viz_int on 31 baits (VALIDATION_LOG 2026-10-06, "Motif null
+WITHOUT secondary structure"): engine `c` with DSSP grouped known carriers better than
+random for 12 of 13 known motif entries (8 of 9 on held-out baits), 1 false element in
+shuffled controls, gold contact precision 62 %, known vs background 2.9×; without DSSP
+11 of 13 (7 of 9), 0 false elements, 62 → 60 %, 3.0×. The entry lost (a MAPK8 D-site
+with 3 carriers) is within what one partner flips, so the benchmark does not separate
+the two nulls; DSSP stays the default because the published numbers rest on it. The **bait side** tests, per bait residue touched
 by ≥ 3 groups, how much the groups agree. The **partner side** tests bait positions
 filled at a constant spacing (≤ 10 residues) along the partner and assembles the
 significant ones into *elements*; a declared filter then keeps in each element only
@@ -105,15 +110,15 @@ with the higher contact precision (66 % vs 62 %). These numbers apply to
 
 ## Install
 
-    pip install alphasift                    # numpy, scipy, pandas, matplotlib, biopython
-    pip install "alphasift[zst]"             # + zstandard, for .zst AFDB downloads
+    pip install scrims                    # numpy, scipy, pandas, matplotlib, biopython
+    pip install "scrims[zst]"             # + zstandard, for .zst AFDB downloads
 
 Two programs are not on PyPI. **`mkdssp`** (DSSP 4.x) is needed by the default,
-validated motif null (`conda install -c conda-forge dssp`); without it `alphasift run`
+validated motif null (`conda install -c conda-forge dssp`); without it `scrims run`
 stops and says so — pass `--motif-ss none` to run without secondary structure, or
 `--motif-engine none` to skip motifs. **Foldseek** is needed only for
 `--motif-engine 3di_aa` (`conda install -c bioconda foldseek`, or point
-`--foldseek-bin` / `$ALPHASIFT_FOLDSEEK` at a binary).
+`--foldseek-bin` / `$SCRIMS_FOLDSEEK` at a binary).
 
 ### Or use the provided environment
 
@@ -121,7 +126,7 @@ If you would rather not touch your own environment, `environment.yml` builds a
 complete one, test runner included:
 
     conda env create -f environment.yml
-    conda activate alphasift
+    conda activate scrims
     pip install -e .
 
 ### Running the tests
@@ -143,27 +148,34 @@ end to end, and that the figure renders. For the partner and motif stages it che
 that the partner pairs reduce exactly to the matrix values, the H/M/L tiers, that
 the motif engine runs on every interface, in both null modes, that DSSP is the
 default and a missing `mkdssp` is a clear error, that `--motif-ss none` needs no
-external program, the motif-logo alignment rules, that partner names follow the
+external program, the motif-logo alignment rules, the classic logo's exact small-sample
+correction and gap-free letter stacks (and that the report's script computes the same), that partner names follow the
 sequence rather than the file header's chain link, and that every output file is
 written. Tests of the DSSP mode are skipped where `mkdssp` is not installed.
+
+`pytest --run-slow` adds an integration test on three real AlphaFold3 screens (ezrin,
+moesin, radixin; 61, 41 and 24 predictions) in `data/`, which is not in git: each runs
+with `--source pae` on plain AlphaFold3 output, with `--source pae` and AlphaBridge files
+present (results must be identical), and with `--source alphabridge`. It takes about
+6 minutes and is skipped when `data/` is absent.
 
 Note that `scipy >= 1.11` is required: the recurrence FDR uses
 `scipy.stats.false_discovery_control`, which older versions do not have.
 
 ## Use
 
-    alphasift run path/to/screen -o out/
+    scrims run path/to/screen -o out/
 
 writes:
 
 | file | what |
 |---|---|
-| `alphasift.json` | everything below in one versioned document (schema `alphasift/1`, described in `alphasift/export.py`) |
-| `report.html` | one self-contained page mirroring the companion website's protein page — matrix, interface cards, motif views, partners, all binders — with linked selection; opens offline (no 3-D: use the ChimeraX script) |
+| `scrims.json` | everything below in one versioned document (schema `scrims/1`, described in `scrims/export.py`) |
+| `report.html` | one self-contained page mirroring the companion website's protein page — matrix, interface cards, motif views (bait side and per-motif partner logos, each as a classic logo in bits or an evidence view; a per-carrier table; a motif lane filters the bait side to that motif), partners, all binders — with linked selection; opens offline (no 3-D: use the ChimeraX script) |
 | `overview.png` | the matrix with RMSF and recurrence tracks and one interface lane |
-| `interfaces/<I>.png` | per interface: bait-side letter columns, motif lanes, and per motif its partner-sequence logo, carriers and elements |
+| `interfaces/<I>.png` | per interface: bait-side letter columns (evidence view), motif lanes, and per motif its partner-sequence logo (classic, bits) over the per-carrier table |
 | `interfaces/<I>_partners.png` | per interface: every partner with its H/M/L residue ranges, motif residues in bold |
-| `alphasift.cxc` (+ `models/`) | ChimeraX script: interfaces coloured, motif residues in gold, every interface and motif a named selection |
+| `scrims.cxc` (+ `models/`) | ChimeraX script: interfaces coloured, motif residues in cyan, every interface and motif a named selection |
 | `matrix.png` | the matrix with the summed-signal track and the called sites |
 | `sites.tsv`, `interfaces.tsv` | called sites; 3-D interfaces |
 | `partners.tsv`, `bait_side.tsv`, `motifs.tsv` | partner ranges; bait-side columns; one row per motif |
@@ -176,7 +188,7 @@ row order, letter colours and motif-logo alignment). Every parameter above is a 
 3.7 (75 models × ~3 s).
 
 ```python
-from alphasift import analyze
+from scrims import analyze
 res = analyze("path/to/screen")
 res.M_pae        # partners × residues, raw min-PAE (Å); NaN = no contact
 res.M_signal     # the same, transformed to (0, 1]; 0 = no contact
@@ -204,7 +216,7 @@ It is not free. Using it means **installing AlphaBridge and running it over
 every prediction in the screen first**, under AlphaBridge's own licence. A
 *partial* run is worse than none: recurrence asks whether partners converge on
 the same residues, so predictions missing from the matrix change the test rather
-than merely shrinking it. AlphaSIFT lists every excluded prediction in
+than merely shrinking it. SCRIMS lists every excluded prediction in
 `summary.json` and warns when any are missing.
 
 The two sources share a 0–1 scale but not its meaning: on the PAE channel 0.8 is
@@ -223,11 +235,11 @@ keep their numeric defaults across sources but not their interpretation.
 If a screen has two shared sequences, or you are analysing a single pair (where
 every chain is trivially "common"), name the bait yourself:
 
-    alphasift run path/to/pair -o out/ --bait-chain A
+    scrims run path/to/pair -o out/ --bait-chain A
 
 ### Running AlphaBridge first (only for `--source alphabridge`)
 
-AlphaBridge is a **separate tool**, not a dependency of AlphaSIFT and not
+AlphaBridge is a **separate tool**, not a dependency of SCRIMS and not
 installed with it: <https://github.com/PDB-REDO/AlphaBridge> (web server:
 <https://alpha-bridge.eu/>). It carries its own licence terms and its own
 citation requirement — read them before use.
@@ -241,14 +253,14 @@ It processes one AlphaFold3 prediction folder at a time, writing
 
     python3 define_interfaces.py -i /path/to/screen/<prediction>
 
-AlphaSIFT needs that file for **every** prediction in the screen, so run it across
+SCRIMS needs that file for **every** prediction in the screen, so run it across
 the whole directory before analysing:
 
     for d in /path/to/screen/*/; do python3 define_interfaces.py -i "$d"; done
-    alphasift run /path/to/screen -o out/ --source alphabridge
+    scrims run /path/to/screen -o out/ --source alphabridge
 
 Predictions AlphaBridge fails on are listed in `summary.json` and excluded from
-the matrix, and AlphaSIFT warns when any are — see the note above on why a partial
+the matrix, and SCRIMS warns when any are — see the note above on why a partial
 run changes the test rather than merely shrinking it.
 
 **AlphaBridge is not required.** It is one optional source, not a dependency:
@@ -266,7 +278,7 @@ entry name, gene, organism) — no network lookups.
 ## Scope limit worth stating plainly
 
 Recurrence needs a screen: it asks whether partners converge *relative to each
-other*. A single pair cannot answer that, so with one prediction AlphaSIFT reports
+other*. A single pair cannot answer that, so with one prediction SCRIMS reports
 the matrix and strength regions and explicitly declines to report a q-value.
 
 ## Provenance
@@ -288,7 +300,7 @@ the JSON and table outputs, the ChimeraX script, and the CLI.
 intended terms are free availability for non-commercial users, and continued
 availability for at least two years after publication, as the journal requires.
 
-**Relationship to AlphaBridge.** AlphaSIFT contains no AlphaBridge code, does not
+**Relationship to AlphaBridge.** SCRIMS contains no AlphaBridge code, does not
 import it, and does not require it to run; AlphaBridge output is one optional
 input format among several. AlphaBridge is distributed by its authors under its
 own, separate agreement, which restricts redistribution and derivative works and
@@ -296,4 +308,4 @@ requires that results obtained through its use cite its publication. If you
 produced your screens with AlphaBridge, those terms apply to that use — cite it
 accordingly.
 
-Citation for AlphaSIFT: the Application Note and Zenodo DOI, once published.
+Citation for SCRIMS: the Application Note and Zenodo DOI, once published.

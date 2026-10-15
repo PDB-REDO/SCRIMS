@@ -1,9 +1,9 @@
 """
-Machine-readable output: one JSON document per screen (`alphasift.json`) holding
+Machine-readable output: one JSON document per screen (`scrims.json`) holding
 everything the figures and the HTML report are drawn from, plus flat TSV tables.
 
-Schema "alphasift/1" (top-level keys):
-  schema, alphasift_version
+Schema "scrims/1" (top-level keys):
+  schema, scrims_version
   screen        {name, dir, source, single_pair, n_predictions, skipped: {prediction: reason}}
   bait          {sequence, length, identity, chain_ids: {prediction: chain}}
   params        every parameter the run used
@@ -21,16 +21,22 @@ Schema "alphasift/1" (top-level keys):
                               n_high, n_medium, n_low, bait_residues, n_pairs, best_pae,
                               median_pae}] | null (no pairwise PAE: unknown, not empty),
                   motif: null (no partner touches it, or the engine did not run) |
-                         {panel1: [{pos, n_groups, agree, q, letters}],
+                         {panel1: [{pos, n_groups, agree, q, letters, letters_grouped}],
+                          (letters = share of partner residues at the bait residue; letters_grouped =
+                           the same with each partner group of >= motif_id_group identity weighing 1
+                           in total, split over its members -- the bait-side classic logo's input)
                           elements: [{positions, n_groups, q, letters, orientation, consistency,
                                       carriers: [{id, group, residues, map}]}],
                           motifs: [{id, elements, positions, n_groups, carriers, bipartite,
-                                    linked_by}],
+                                    linked_by, touching, candidates: [{elm, name, tier,
+                                    groups_matched, groups, expected, p, domain, matches}]}],
+                          (candidates = known ELM classes its partners match beyond chance,
+                           scrims.motif_candidates; [] = none suggested)
                           motif_relations: [{a, b, relation, shared_positions, k, exclusive,
                                              q_dep, status}],
                           bipartite, alternative, control: {false_elements, false_columns},
                           partners_used, partners_total,
-                          alignments: {motif id: alphasift.motif_align.align_motif(...)}}}]
+                          alignments: {motif id: scrims.motif_align.align_motif(...)}}}]
   motif_engine  {engine, params, groups: {prediction: group id}} | null
 
 The per-interface `motif` block has the shape of the companion website's
@@ -46,7 +52,9 @@ import math
 
 import numpy as np
 
-SCHEMA = "alphasift/1"
+from scrims.motif_candidates import motif_candidates, parse_domains
+
+SCHEMA = "scrims/1"
 
 
 def _f(x, nd=None):
@@ -58,7 +66,16 @@ def _f(x, nd=None):
     return round(x, nd) if nd is not None else x
 
 
-def _motif_block(r, groups):
+def _touching(touch, m, S2):
+    """{carrier: {bait position: sorted partner residues touching it}} over motif m's bait positions, for every carrier
+    of m's elements (viz_int 2026-10-08: keyed by bait position for the binding sub-groups)."""
+    pos = {int(x) for x in m["positions"]}
+    cars = sorted({pr for i in m["elements"] for pr in S2["elements"][i]["residues"]} | set(m["carriers"]))
+    return {c: {str(b): sorted(int(r) for r in rs) for b, rs in sorted((touch.get(c) or {}).items()) if int(b) in pos and rs}
+            for c in cars}
+
+
+def _motif_block(r, groups, seed=None, int_seq=None, bait_domains=frozenset()):
     """One interface's engine result in the website's 0.9 entry shape (viz_int
     webexport._motif_elements_confidence, minus gene/uniprot/cif per carrier)."""
     S2 = r["panel2"]["shuffle"]
@@ -79,12 +96,19 @@ def _motif_block(r, groups):
                 for x in rows]
     return {
         "panel1": [{"pos": int(c["pos"]), "n_groups": int(c["n_groups"]), "agree": _f(c["agree"]),
-                    "q": _f((c["q"] or {}).get("shuffle")), "letters": c["letters"]} for c in r["panel1"]],
+                    "q": _f((c["q"] or {}).get("shuffle")), "letters": c["letters"],
+                    "letters_grouped": c.get("letters_grouped", {})} for c in r["panel1"]],
         "elements": els,
         "motifs": [{"id": m["id"], "elements": [int(x) for x in m["elements"]],
                     "positions": [int(x) for x in m["positions"]], "n_groups": int(m["n_groups"]),
                     "carriers": list(m["carriers"]), "bipartite": bool(m["bipartite"]),
-                    "linked_by": list(m.get("linked_by", []))} for m in S2.get("motifs", [])],
+                    "linked_by": list(m.get("linked_by", [])),
+                    # every carrier residue touching the motif's bait positions (display only; viz_int 2026-10-07)
+                    **({"touching": _touching(r["touch"], m, S2)} if "touch" in r else {}),
+                    # known ELM class its partners match beyond chance (viz_int IMPROVEMENTS #41; 2026-10-12)
+                    **({"candidates": motif_candidates(seed, r["_iface"], m, S2["elements"], r.get("touch") or {},
+                                                       int_seq, groups, bait_domains)} if int_seq else {})}
+                   for m in S2.get("motifs", [])],
         "motif_relations": [{"a": x["a"], "b": x["b"], "relation": x["relation"],
                              "shared_positions": [int(y) for y in x["shared_positions"]],
                              "k": int(x["k"]), "exclusive": bool(x["exclusive"]), "q_dep": _f(x["q_dep"]),
@@ -98,16 +122,18 @@ def _motif_block(r, groups):
 
 
 def document(res):
-    """The `alphasift/1` document for one analysed screen (an alphasift.Result)."""
-    from alphasift import __version__
-    from alphasift.motif_align import align_motif
+    """The `scrims/1` document for one analysed screen (an scrims.Result)."""
+    from scrims import __version__
+    from scrims.motif_align import align_motif
 
     # Display order as on the website: binder rows only (>= 1 contact), clustered among themselves.
-    from alphasift.order import binder_clustering
+    from scrims.order import binder_clustering
     b_idx = [k for k, ok in enumerate(res.M_signal.sum(1) > 0) if ok] if res.M_signal.size else []
     row_order = [b_idx[k] for k in binder_clustering(res.M_signal[b_idx])[0]] if b_idx else []
     eng = res.motifs or {}
     groups = eng.get("groups", {})
+    seed = (res.bait.get("identity") or {}).get("gene") or res.screen_dir.name
+    bait_domains = parse_domains(res.params.get("bait_domains", ""))
     binders = set(res.identities) | {pr for pr, ok in zip(res.preds, res.M_signal.sum(1) > 0) if ok} \
         if res.M_signal.size else set()
 
@@ -123,7 +149,7 @@ def document(res):
         r = (eng.get("ifaces") or {}).get(iid)
         motif = None
         if r is not None:
-            motif = _motif_block(r, groups)
+            motif = _motif_block({**r, "_iface": iid}, groups, seed, res.int_seq, bait_domains)
             motif["alignments"] = {m["id"]: align_motif(motif, m, partners) for m in motif["motifs"]}
         ifaces.append({"id": iid, "significant": bool(row["significant"]),
                        "segments": [[int(a), int(b)] for a, b in row["segments"]],
@@ -134,7 +160,7 @@ def document(res):
     sig = [[round(float(v), 4) for v in r] for r in res.M_signal]
     g_res, g_rmsf = res.rmsf
     return {
-        "schema": SCHEMA, "alphasift_version": __version__,
+        "schema": SCHEMA, "scrims_version": __version__,
         "screen": {"name": res.screen_dir.name, "dir": str(res.screen_dir), "source": res.source,
                    "single_pair": res.single_pair, "n_predictions": len(res.preds), "skipped": res.skipped},
         "bait": {"sequence": res.bait.get("sequence"), "length": int(res.bait["length"]),
@@ -161,7 +187,7 @@ def label(identity, pred):
 
 
 def write_tables(doc, outdir):
-    """partners.tsv, bait_side.tsv and motifs.tsv from an `alphasift/1` document."""
+    """partners.tsv, bait_side.tsv and motifs.tsv from an `scrims/1` document."""
     def tsv(name, header, rows):
         with open(outdir / name, "w", newline="") as fh:
             w = csv.writer(fh, delimiter="\t")
@@ -183,8 +209,10 @@ def write_tables(doc, outdir):
             rows.append([i["id"], c["pos"], doc["bait"]["sequence"][c["pos"] - 1] if doc["bait"]["sequence"] else "",
                          c["n_groups"], "" if c["agree"] is None else c["agree"],
                          "" if c["q"] is None else c["q"],
-                         ";".join(f"{a}:{v}" for a, v in sorted(c["letters"].items(), key=lambda kv: -kv[1]))])
-    tsv("bait_side.tsv", ["interface", "bait_residue", "bait_aa", "n_groups", "agreement", "q", "partner_letters"], rows)
+                         ";".join(f"{a}:{v}" for a, v in sorted(c["letters"].items(), key=lambda kv: -kv[1])),
+                         ";".join(f"{a}:{v}" for a, v in sorted(c.get("letters_grouped", {}).items(), key=lambda kv: -kv[1]))])
+    tsv("bait_side.tsv", ["interface", "bait_residue", "bait_aa", "n_groups", "agreement", "q", "partner_letters",
+                          "partner_letters_grouped"], rows)
     rows = []
     for i in doc["interfaces"]:
         m = i["motif"] or {}
@@ -192,12 +220,19 @@ def write_tables(doc, outdir):
             al = m["alignments"][mo["id"]]
             names = [label(next((p["identity"] for p in i["partners"] or [] if p["id"] == c), None), c)
                      for c in mo["carriers"]]
-            cons = "".join("-" if c["kind"] == "gap" else (c["counts"][0][0] if c["counts"] else ".")
-                           for c in al["columns"])
+            # 2026-10-09: the motif consensus (motif_align.motif_consensus; before: the top letter of every column)
+            cons = "-".join(t for _, t in al.get("consensus") or [])
             rows.append([i["id"], i["significant"], mo["id"], ";".join(map(str, mo["positions"])), mo["n_groups"],
-                         len(mo["carriers"]), ",".join(mo["linked_by"]), mo["bipartite"], cons, ";".join(names)])
+                         len(mo["carriers"]), ",".join(mo["linked_by"]), mo["bipartite"], cons,
+                         al.get("quality", ""), al.get("quality_top", ""),
+                         min((m["elements"][k]["q"] for k in mo["elements"] if m["elements"][k]["q"] is not None), default=""),
+                         "antiparallel" if al.get("flipped") else "",
+                         ";".join(f"{c['elm']} ({c['tier']}, {c['groups_matched']}/{c['groups']} groups, p={c['p']:.2g}, "
+                                  f"domain {c['domain']})" for c in mo.get("candidates") or []),
+                         ";".join(names)])
     tsv("motifs.tsv", ["interface", "interface_significant", "motif", "bait_residues", "n_groups", "n_carriers",
-                       "linked_by", "bipartite", "partner_consensus", "carriers"], rows)
+                       "linked_by", "bipartite", "partner_consensus", "quality_bits", "quality_top_pct", "motif_q", "orientation",
+                       "known_class", "carriers"], rows)
 
 
 def write_json(doc, path):

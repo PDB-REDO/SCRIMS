@@ -6,8 +6,8 @@ Extracted verbatim from viz_int.patches (the `call_patches` engine and its
 helpers) so that the published numbers apply to this code unchanged; re-synced
 2026-10-01 with viz_int's partner-level strength calling (IMPROVEMENTS #32) and
 widened width band (#33). Only two things differ from the source: the legacy
-geometry loaders that lived in the same module are not here (AlphaSIFT builds its
-matrix from PAE, see alphasift.matrix), and the two dead parameters
+geometry loaders that lived in the same module are not here (SCRIMS builds its
+matrix from PAE, see scrims.matrix), and the two dead parameters
 `tau_strong`/`strong_mask` are gone from the signature -- they were ignored by
 the body since 2026-09-21.
 
@@ -80,7 +80,7 @@ def _partner_footprints(M, tau, gap_max, min_res):
     """Strength footprints at PARTNER level (2026-09-30, user-approved "configuration B"): a row qualifies when it
     holds >= `min_res` residues at >= `tau` ANYWHERE on the bait, and then EVERY sequence group of it (residues at
     >= `tau`, gaps <= `gap_max`) is a footprint, whatever its length. Still sequence-level: the 3-D decision is left
-    to the merge (alphasift.interfaces, partner rule + attach step).
+    to the merge (scrims.interfaces, partner rule + attach step).
 
     Why: `_footprints` asks each sequence group for `min_res` residues, which cuts one partner's footprint on a
     repeat surface into pieces and drops the short ones (ILK x LIMS4: 14 residues at s >= 0.8, only 97-101 and
@@ -121,7 +121,7 @@ def call_patches(M, res_ids=None, P=5000, gap=1, min_size=4, pct=95,
     """Call interaction sites on a partner x bait-residue matrix.
 
     `M` is the signal matrix (0 = no contact, higher = more confident;
-    alphasift.matrix.confidence_signal produces it). Returns a list of dicts
+    scrims.matrix.confidence_signal produces it). Returns a list of dicts
     sorted by start: res_start, res_end, channel ('R'/'S'/'R+S'), q_recur,
     recurrent, recurrent_core, strength_A, strength_A_per_res,
     strength_significant, strength_core, n_partners_strong, significant.

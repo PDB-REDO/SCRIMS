@@ -1,7 +1,7 @@
 """
 Screen-level API: a directory of predictions in, a matrix and called sites out.
 
-    from alphasift import analyze
+    from scrims import analyze
     res = analyze("path/to/screen")
     res.M_pae        # partners x bait residues, raw min-PAE (A), NaN = no contact
     res.M_signal     # the same, transformed to (0, 1]; 0 = no contact
@@ -28,35 +28,35 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from alphasift import readers
-from alphasift.bait import (bait_from_chain, detect_bait,
+from scrims import readers
+from scrims.bait import (bait_from_chain, detect_bait,
                           detect_bait_from_partner_map, detect_bait_from_structures)
-from alphasift.interfaces import merge_interfaces
-from alphasift.readers import alphabridge as ab
-from alphasift.readers.mmcif import chain_identities
-from alphasift.matrix import bait_confidence_row, confidence_signal, contact_pairs
-from alphasift.motifs import run_motif_engine
-from alphasift.order import binder_clustering
-from alphasift.partners import build_partner_annotations
-from alphasift.rmsf import global_rmsf
-from alphasift.stats import call_patches
-from alphasift.structures import load_binder_structures
+from scrims.interfaces import merge_interfaces
+from scrims.readers import alphabridge as ab
+from scrims.readers.mmcif import chain_identities
+from scrims.matrix import bait_confidence_row, confidence_signal, contact_pairs
+from scrims.motifs import ENGINE_DEFAULTS, run_motif_engine
+from scrims.order import binder_clustering
+from scrims.partners import build_partner_annotations
+from scrims.rmsf import global_rmsf
+from scrims.stats import call_patches
+from scrims.structures import load_binder_structures
 
 DEFAULTS = dict(
     # input
     source="pae",        # "pae" (any predictor) or "alphabridge" (AlphaFold3 only)
     bait_chain=None,     # name the bait chain instead of detecting it by sequence
-    # matrix (alphasift.matrix)
+    # matrix (scrims.matrix)
     d0_contact=8.0,      # A; Cb-Cb bar that SELECTS candidate contacts
     d0_signal=10.0,      # A; fixed d0 of the pTM-style transform, all screens alike
     tau_strong_pae=10.0, # A; contact bar for the reported strength amount
-    # statistics (alphasift.stats)
+    # statistics (scrims.stats)
     P=5000, gap=1, min_size=4, pct=95, rng_seed=0,
     tau_single=0.8, min_single=4, single_gap=2,
     # where min_single applies: "partner" (>= 4 residues at >= tau_single anywhere on
     # the bait, then every sequence piece counts; 2026-09-30) or "group" (each piece)
     strength_scope="partner",
-    # 3-D merge (alphasift.interfaces). "partner": sites LINK when they touch (support >=
+    # 3-D merge (scrims.interfaces). "partner": sites LINK when they touch (support >=
     # merge_support), >= merge_min_shared partners bind both (signal >= partner_tau_in on
     # a site residue), shared/smaller >= merge_share_small and shared/larger >=
     # merge_share_large; interfaces = connected components. Short (< attach_min_len) or
@@ -67,11 +67,11 @@ DEFAULTS = dict(
     merge_3d=True, merge_method="partner", merge_support=0.50, d_merge=8.0,
     merge_min_shared=2, merge_share_small=0.7, merge_share_large=0.2, partner_tau_in=0.5,
     attach_tau_strong=0.8, attach_tau_weak=0.3, attach_min_len=4, merge_prox_support=0.9,
-    # partner annotation (alphasift.partners): a partner is listed at an interface iff >= 1 pair
+    # partner annotation (scrims.partners): a partner is listed at an interface iff >= 1 pair
     # into it has s >= partner_tau_in (PAE <= 10 A); its residues are tiered H (s >=
     # partner_tau_high, PAE <= 5 A), M, L. Always from PAE, whichever `source` built the matrix.
     partner_tau_high=0.8,
-    # motif engine (alphasift.motifs), on every interface: "c" (amino acids, BLOSUM62) or "3di_aa"
+    # motif engine (scrims.motifs), on every interface: "c" (amino acids, BLOSUM62) or "3di_aa"
     # (amino acid + Foldseek 3Di of the partner chain at weight motif_w3di; needs Foldseek), or
     # None to skip. The validated viz_int settings (VALIDATION_LOG 2026-10-01/02).
     motif_engine="c", motif_n_perm=1000, motif_max_span=10, motif_touch_cb=7.0,
@@ -79,6 +79,9 @@ DEFAULTS = dict(
     # the motif null's secondary structure: "dssp" (validated; letters shuffled within helix /
     # strand / other; needs mkdssp) or "none" (one pool; no external program; not validated)
     motif_ss="dssp",
+    # the bait's domains for the known-motif suggestion's domain evidence (scrims.motif_candidates):
+    # Pfam / InterPro accessions, e.g. "PF00635,IPR000535"; "" = unknown (the suggestion still runs)
+    bait_domains="",
 )
 
 
@@ -344,6 +347,27 @@ def analyze(screen_dir, **overrides) -> Result:
                                     TOUCH_CB=p["motif_touch_cb"], ID_GROUP=p["motif_id_group"],
                                     W3DI=p["motif_w3di"], EL_FILTER=p["motif_el_filter"],
                                     SS=p["motif_ss"]))
+                    # every partner residue touching each bait residue (the engine's rule); the engine keeps one per
+                    # position, the partner-side logo/table needs all (VAPA FFAT E348/E349 on bait 54). Display only.
+                    for i in eng_ifaces:
+                        r = (motifs.get("ifaces") or {}).get(i["id"])
+                        if r is None:
+                            continue
+                        touch = {}
+                        for x in i["partners"]:
+                            got = pairs.get(x)
+                            if got is None:
+                                continue
+                            b, j, pae = (np.asarray(v) for v in got)
+                            ok = np.isin(b, i["residues"]) & \
+                                (1 / (1 + (pae / ENGINE_DEFAULTS["D0"]) ** 2) >= ENGINE_DEFAULTS["TAU"])
+                            tm = {}
+                            for bb, jj in zip(b[ok].tolist(), j[ok].tolist()):
+                                if bb in loaded[3].get(x, {}) and jj in loaded[4].get(x, {}) and \
+                                        np.linalg.norm(loaded[3][x][bb] - loaded[4][x][jj]) <= p["motif_touch_cb"]:
+                                    tm.setdefault(int(bb), set()).add(int(jj))
+                            touch[x] = {bb: sorted(v) for bb, v in sorted(tm.items())}
+                        r["touch"] = touch
             rmsf = global_rmsf(cif_of, bait, binder_preds)
             identities = _identities(screen_dir, bait, cif_of)
     elif binder_preds:
@@ -366,7 +390,7 @@ def analyze(screen_dir, **overrides) -> Result:
 
 def _identities(screen_dir, bait, cif_of):
     """Partner identity per prediction from its model header (mapped by sequence, see
-    alphasift.readers.mmcif.chain_identities); the bait's own identity goes into
+    scrims.readers.mmcif.chain_identities); the bait's own identity goes into
     `bait['identity']` from the first prediction that resolves it."""
     out = {}
     for pr, cif in cif_of.items():

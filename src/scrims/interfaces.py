@@ -17,7 +17,7 @@ extracted verbatim from viz_int.interfaces / viz_int.structures (re-synced
 2026-10-01, IMPROVEMENTS #32 and its addendum). What is NOT here, deliberately: the
 partner-side contact, peptide, register and motif steps that followed them in
 the source pipeline. Those depend on AlphaBridge link confidence and on the
-motif machinery, both outside AlphaSIFT's scope.
+motif machinery, both outside SCRIMS's scope.
 """
 
 from __future__ import annotations

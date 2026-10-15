@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from alphasift import analyze, call_patches, ptm_func, confidence_signal
-from alphasift.readers import discover, load_prediction, load_sequences
+from scrims import analyze, call_patches, ptm_func, confidence_signal
+from scrims.readers import discover, load_prediction, load_sequences
 
 
 # --------------------------------------------------------------- the transform
@@ -106,7 +106,7 @@ def test_single_pair_reports_no_qvalue(screen):
 def test_figure_renders(screen, tmp_path):
     import matplotlib
     matplotlib.use("Agg")
-    from alphasift.figure import figure
+    from scrims.figure import figure
     out = tmp_path / "m.png"
     figure(analyze(screen, P=200, motif_engine=None), out)
     assert out.exists() and out.stat().st_size > 5000
@@ -185,7 +185,7 @@ def _merge_case(sites, binds, positions, n_models=4):
     """sites: {name: (a, b)}; binds: {partner: {residue: signal}};
     positions: {residue: (x, y, z)} -- the same bait conformation in every model."""
     import pandas as pd
-    from alphasift.interfaces import merge_interfaces
+    from scrims.interfaces import merge_interfaces
     tbl = pd.DataFrame([dict(res_start=a, res_end=b, patch=n, channel="S", significant=True)
                         for n, (a, b) in sites.items()])
     atoms = {r: np.array([xyz], float) for r, xyz in positions.items()}

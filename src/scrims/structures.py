@@ -7,8 +7,8 @@ for the motif engine's touch rule, one Cbeta per residue from the same parse.
 
 `T2O`, `aa1`, `load_binder_structures` and `_cb_of_chain` are extracted verbatim
 from viz_int.structures (2026-10-02), with one change: the model file of each
-prediction is passed in (`cif_of`), because AlphaSIFT also reads screens whose
-models exist only as loose `.cif.zst` (see alphasift.readers.model_cif). The
+prediction is passed in (`cif_of`), because SCRIMS also reads screens whose
+models exist only as loose `.cif.zst` (see scrims.readers.model_cif). The
 parse is Bio.PDB's, as in the source, so residue numbering and the
 standard-residue filter are the validated ones.
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 from Bio.PDB import MMCIFParser
 
-from alphasift.readers.mmcif import pseudo_cb
+from scrims.readers.mmcif import pseudo_cb
 
 # three-letter -> one-letter, with the PTMs the screen actually contains
 # (mapped to their parent residue in lowercase so they stay visible).

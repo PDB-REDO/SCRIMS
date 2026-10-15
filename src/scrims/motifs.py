@@ -5,16 +5,19 @@ same spacing along their own sequence, more often than shuffled letters would?
 Extracted verbatim from viz_int.motif_engine (2026-10-02: tie-safe p-values, every interface,
 one-motif-or-several grouping) so that its validation applies to this code unchanged. Changes:
 `partner_3di` and `run_motif_engine` take each prediction's model file (`cif_of`) instead of
-globbing a screen folder, since AlphaSIFT also reads models kept only as `.cif.zst`; the Foldseek
-binary is found via `foldseek_bin`, $ALPHASIFT_FOLDSEEK or PATH.
+globbing a screen folder, since SCRIMS also reads models kept only as `.cif.zst`; the Foldseek
+binary is found via `foldseek_bin`, $SCRIMS_FOLDSEEK or PATH.
 
 Secondary structure is a choice (2026-10-06, user decision), `ss`:
   "dssp" (default)  as in viz_int: letters are shuffled only within a DSSP class (helix / strand /
                     other), so that "every partner binds with a helix" is not read as a motif. Needs
                     mkdssp. This is the validated engine; outputs are identical to viz_int's.
   "none"            letters are shuffled among ALL residues placed on the interface; no external
-                    program, several times faster. Not validated: the viz_int numbers (known motifs
-                    12/13 etc.) were measured with "dssp".
+                    program, several times faster. Benchmarked in viz_int (VALIDATION_LOG 2026-10-06,
+                    "Motif null WITHOUT secondary structure"; 31 baits): engine c 11/13 known motif
+                    entries beat random (7/9 held out) vs 12/13 (8/9) with "dssp"; control false
+                    elements 0 vs 1; gold precision 60 vs 62 %; known vs background 3.0 vs 2.9x. The
+                    one-entry difference is within what one partner flips.
 Validation: viz_int VALIDATION_LOG (motif stage, 2026-09-29 ..
 2026-10-02), IMPROVEMENTS #34 and its addendum.
 
@@ -48,7 +51,7 @@ Per confidence interface (every one, significant or not; each result carries the
   scope      every confidence interface (significant or not, flagged): the bait-side Panel 1 exists
              whenever any partner touches the interface, whether or not a motif element is found.
 Needs: mkdssp (DSSP 4.x) on PATH for ss="dssp"; engine "3di_aa" also a Foldseek binary (createdb) --
-`foldseek_bin`, $ALPHASIFT_FOLDSEEK or `foldseek` on PATH.
+`foldseek_bin`, $SCRIMS_FOLDSEEK or `foldseek` on PATH.
 """
 
 from __future__ import annotations
@@ -66,7 +69,7 @@ import numpy as np
 from Bio.Align import PairwiseAligner, substitution_matrices
 from scipy.stats import false_discovery_control, hypergeom
 
-from alphasift.structures import aa1
+from scrims.structures import aa1
 
 AA = "ARNDCQEGHILKMFPSTWYV"
 AI = {a: i for i, a in enumerate(AA)}
@@ -121,10 +124,10 @@ def partner_3di(cif_of, bait, preds, foldseek_bin=None, threads=8):
     when length and amino-acid string match (a mismatch is skipped, never guessed). Checked
     identical to the validation letters (80_, cropped dimers) on PARVA: 18,729 / 18,729."""
     from Bio.PDB import MMCIFParser
-    fs = foldseek_bin or os.environ.get("ALPHASIFT_FOLDSEEK") or shutil.which("foldseek")
+    fs = foldseek_bin or os.environ.get("SCRIMS_FOLDSEEK") or shutil.which("foldseek")
     if not fs:
         raise RuntimeError("engine '3di_aa' needs a Foldseek binary: pass foldseek_bin, set "
-                           "ALPHASIFT_FOLDSEEK, or put foldseek on PATH")
+                           "SCRIMS_FOLDSEEK, or put foldseek on PATH")
     out = {}
     with tempfile.TemporaryDirectory() as td:
         td = Path(td); (td / "in").mkdir()
@@ -705,7 +708,21 @@ class _Engine:
                 if j < len(real[p]) and real[p][j] >= 0:
                     w[self.LET(real[p][j])] += ww
             tot = sum(w.values())
+            # 2026-10-07 (viz_int run_iface, for the group-weighted classic logo): each partner group
+            # (>= ID_GROUP identity) weighs 1 in total, split over its members' residues here in
+            # proportion to their votes -- paralogs count once.
+            byg = collections.defaultdict(list)
+            for p, j, ww in c["obs"]:
+                if j < len(real[p]) and real[p][j] >= 0:
+                    byg[grp[p]].append((self.LET(real[p][j]), ww))
+            wg = collections.Counter()
+            for items in byg.values():
+                gt = sum(x for _, x in items)
+                for a_, x in items:
+                    wg[a_] += x / gt if gt else 0.0
+            gtot = sum(wg.values())
             panel1_out.append(dict(pos=str(c["pos"]), touched=None, n_groups=c["n_groups"], agree=c["agree"],
+                                   letters_grouped={a_: round(v / gtot, 3) for a_, v in wg.items()} if gtot else {},
                                    q=c["q"], letters={a: round(v / tot, 3) for a, v in w.items()} if tot else {}))
         return dict(panel1=panel1_out, marks=marks, repeats=rep,
                     panel2={"shuffle": dict(candidates=ncand, rules=len(sig), parts=len(prt), elements=descs,
@@ -742,11 +759,11 @@ def run_motif_engine(engine, seed_key, ifaces, pairs, int_seq, cif_of, bait, bai
                      params=None, foldseek_bin=None):
     """Run one motif engine on a bait's confidence interfaces.
 
-    seed_key  fixes the permutations (alphasift.screen passes the screen folder's name, as viz_int)
+    seed_key  fixes the permutations (scrims.screen passes the screen folder's name, as viz_int)
     ifaces    [{'id', 'residues', 'significant', 'partners': [prediction, ...]}] (partners = the
-              interface's confidently binding partners, alphasift.partners.build_partner_annotations)
-    pairs     {prediction: (bait_res, partner_res, pae)} (alphasift.matrix.contact_pairs)
-    int_seq   {prediction: {residue: three-letter name}} (alphasift.structures.load_binder_structures)
+              interface's confidently binding partners, scrims.partners.build_partner_annotations)
+    pairs     {prediction: (bait_res, partner_res, pae)} (scrims.matrix.contact_pairs)
+    int_seq   {prediction: {residue: three-letter name}} (scrims.structures.load_binder_structures)
     cif_of    {prediction: plain-text model CIF path} (for DSSP and Foldseek)
     params    ENGINE_DEFAULTS overrides; SS = "dssp" (default) or "none" (see the module docstring)
     bait_cb / part_cb  {prediction: {residue: Cb xyz}} (load_binder_structures(..., with_cb=True))

@@ -135,10 +135,10 @@ def detect_bait_from_structures(screen_dir: str | Path) -> dict:
 
     Same rule, unchanged — a chain is the bait if and only if its full sequence
     appears in every prediction of the screen. Chain letter and length are never
-    used as criteria. This is what lets AlphaSIFT run on raw AlphaFold output with
+    used as criteria. This is what lets SCRIMS run on raw AlphaFold output with
     no AlphaBridge run in between.
     """
-    from alphasift.readers import discover, load_sequences
+    from scrims.readers import discover, load_sequences
 
     screen = Path(screen_dir)
     per_pred = {}
@@ -176,7 +176,7 @@ def bait_from_chain(screen_dir: str | Path, chain: str) -> dict:
     screen may legitimately contain two shared sequences. This is the explicit
     way out: name the chain.
     """
-    from alphasift.readers import discover, load_sequences
+    from scrims.readers import discover, load_sequences
 
     screen = Path(screen_dir)
     chain_ids, seq = {}, None

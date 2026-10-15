@@ -5,7 +5,7 @@ the binders' bait chains after a reference-free consensus superposition
 
 `_kabsch_Rt`, `_consensus` and `global_rmsf` are extracted verbatim from
 viz_int.plotdata (ov_4), except that each prediction's model file is passed in
-(`cif_of`, see alphasift.readers.model_cif) instead of globbed from the screen.
+(`cif_of`, see scrims.readers.model_cif) instead of globbed from the screen.
 """
 
 from __future__ import annotations

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "alphasift"
+name = "scrims"
 version = "0.1.0.dev0"
-description = "AlphaSIFT: interaction sites, binding partners and shared motifs from AlphaFold structure-prediction screens"
+description = "SCRIMS: interaction sites, binding partners and shared motifs from AlphaFold structure-prediction screens"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -23,10 +23,12 @@ zst = ["zstandard>=0.21"]   # only for .zst-compressed AFDB/ColabFold bulk downl
 dev = ["pytest>=7"]
 
 [project.scripts]
-alphasift = "alphasift.cli:main"
+scrims = "scrims.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-alphasift = ["mat3di.txt"]   # Foldseek 3Di substitution matrix, read by the 3di_aa engine
+# Foldseek 3Di substitution matrix (3di_aa engine); ELM classes / interaction domains and Pfam clans
+# (scrims.motif_candidates)
+scrims = ["mat3di.txt", "data/*.tsv", "data/*.tsv.gz"]

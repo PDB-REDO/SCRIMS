@@ -74,7 +74,7 @@ def add_alphabridge(screen, plan=None):
 
     `plan` maps prediction name -> (bait_start, bait_end, highest cut-off at
     which that range is still in an interface). Written in the shape
-    alphasift.readers.alphabridge.bait_row reads: a sweep of cut-offs, each
+    scrims.readers.alphabridge.bait_row reads: a sweep of cut-offs, each
     listing the interfaces surviving at that level.
     """
     plan = plan or {"p1": (10, 14, 0.9), "p2": (10, 14, 0.7), "p3": (11, 15, 0.5)}
@@ -100,3 +100,22 @@ def add_alphabridge(screen, plan=None):
                "interactions": interactions}
         (d / "alphabridge_data.json").write_text(json.dumps(doc))
     return screen
+
+
+# ------------------------------------------------------------- slow integration tests
+def pytest_addoption(parser):
+    parser.addoption("--run-slow", action="store_true", default=False,
+                     help="also run tests marked slow (real screens in data/, minutes)")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: real-data integration test; needs --run-slow")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-slow"):
+        return
+    skip = pytest.mark.skip(reason="slow integration test: pass --run-slow")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip)

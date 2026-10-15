@@ -2,7 +2,7 @@
 Partner annotation: for each 3-D interface, every partner that binds it
 confidently, with the partner residues that bind it, tiered by confidence.
 
-Evidence = the confidence matrix's own pairs (`alphasift.matrix.contact_pairs`:
+Evidence = the confidence matrix's own pairs (`scrims.matrix.contact_pairs`:
 Cb-Cb <= 8 A, direction-symmetrised PAE) seen from the partner chain, with
 s = 1/(1+(PAE/d0)^2) as in the matrix. Tiers per partner residue, by its best
 pair: H s >= 0.8 (PAE <= 5 A), M 0.5 <= s < 0.8, L s < 0.5. Measured on the
@@ -19,7 +19,7 @@ import re
 
 import numpy as np
 
-from alphasift.structures import aa1
+from scrims.structures import aa1
 
 
 def short_name(n):
