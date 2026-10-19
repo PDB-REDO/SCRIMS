@@ -1,0 +1,42 @@
+{
+  "upload_type": "software",
+  "title": "SCRIMS: statistical inference of functional interaction sites and shared motifs from structure-prediction screens",
+  "version": "0.1.0",
+  "description": "SCRIMS (SCReening for Interaction Motifs and Sites) analyses structure-prediction screens of one bait protein against many preys. It builds a bait–prey confidence matrix from predicted aligned error, calls interaction sites by recurrence (a permutation test with Benjamini–Hochberg control) and strength, merges sites into 3-D interfaces, lists the preys and prey residues that bind each interface, and tests whether unrelated preys bind with similar residues (shared sequence motifs), with a consensus sequence and known-motif (ELM) suggestions. Outputs: an interactive HTML report, JSON and TSV tables, and a ChimeraX script. Includes ELM class tables (elm.eu.org) and Pfam clan mappings used by the known-motif step.",
+  "creators": [
+    {
+      "name": "Álvarez-Salmoral, Daniel",
+      "affiliation": "Oncode Institute and Division of Biochemistry, Netherlands Cancer Institute, Amsterdam, The Netherlands"
+    },
+    {
+      "name": "Borza, Razvan",
+      "affiliation": "Oncode Institute and Division of Biochemistry, Netherlands Cancer Institute, Amsterdam, The Netherlands"
+    },
+    {
+      "name": "Murachelli, Andrea",
+      "affiliation": "Oncode Institute and Division of Biochemistry, Netherlands Cancer Institute, Amsterdam, The Netherlands"
+    },
+    {
+      "name": "Perrakis, Anastassis",
+      "affiliation": "Oncode Institute and Division of Biochemistry, Netherlands Cancer Institute, Amsterdam, The Netherlands"
+    }
+  ],
+  "license": "cc-by-nc-4.0",
+  "access_right": "open",
+  "keywords": [
+    "AlphaFold",
+    "protein–protein interactions",
+    "structure prediction",
+    "interaction screens",
+    "linear motifs",
+    "PAE",
+    "bioinformatics"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/PDB-REDO/SCRIMS",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

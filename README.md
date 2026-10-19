@@ -296,9 +296,9 @@ the JSON and table outputs, the ChimeraX script, and the CLI.
 
 ## Licence and citation
 
-**Licence: not yet fixed — see the note below before distributing this.** The
-intended terms are free availability for non-commercial users, and continued
-availability for at least two years after publication, as the journal requires.
+**Licence: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**; see
+[LICENSE](LICENSE). SCRIMS is free for non-commercial use, and will remain available for at least two
+years after publication, as the journal requires.
 
 **Relationship to AlphaBridge.** SCRIMS contains no AlphaBridge code, does not
 import it, and does not require it to run; AlphaBridge output is one optional
