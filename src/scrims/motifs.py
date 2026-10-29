@@ -98,15 +98,83 @@ def _load_3di_matrix():
 
 
 # ------------------------------------------------------------------ inputs from model files
+# Categories mkdssp is given (2026-10-29). The ModelCIF / reference-database header is left out: libcifpp v10
+# (mkdssp 4.6.1) refuses a file whose `_ma_target_ref_db_details` checksum looks like a number (e.g. 27E470D529D4D39B).
+# Atoms only makes mkdssp crash; these tables give output identical to the full file (200/200 random predictions,
+# SS column; MEMORY.md 2026-10-29).
+DSSP_CATEGORIES = {"entry", "atom_site", "atom_type", "chem_comp", "entity", "entity_poly", "entity_poly_seq",
+                   "struct_asym", "pdbx_poly_seq_scheme"}
+
+
+def _cif_categories(lines):
+    """Yield (category or None, lines) for one mmCIF data block: a `loop_` with its header and rows, or the
+    single-value `_cat.item value` lines of one category; `;` text fields stay with their block."""
+    cur, buf, in_loop, in_text = None, [], False, False
+    for ln in lines:
+        if in_text:
+            buf.append(ln)
+            in_text = not ln.startswith(";")
+            continue
+        if ln.startswith(";"):
+            buf.append(ln); in_text = True
+            continue
+        s = ln.strip()
+        if s == "loop_":
+            if buf:
+                yield cur, buf
+            cur, buf, in_loop = None, [ln], True
+            continue
+        if s.startswith("_"):
+            cat = s[1:].split(".", 1)[0]
+            if in_loop and cur is None:
+                cur = cat; buf.append(ln); continue
+            if in_loop and cat == cur and all(b.strip().startswith(("_", "loop_")) for b in buf):
+                buf.append(ln); continue
+            if not in_loop and cat == cur:
+                buf.append(ln); continue
+            if buf:
+                yield cur, buf
+            cur, buf, in_loop = cat, [ln], False
+            continue
+        if s.startswith("data_"):
+            if buf:
+                yield cur, buf
+            yield "__data__", [ln]
+            cur, buf, in_loop = None, [], False
+            continue
+        buf.append(ln)
+    if buf:
+        yield cur, buf
+
+
+def mkdssp_lines(cif) -> list | None:
+    """mkdssp 4.x classic output lines for a model CIF, run on a copy holding only DSSP_CATEGORIES; if that fails
+    (a format lacking one of them), on the full file as before; None if both fail. Used by dssp_classes. Same function as viz_int.features.mkdssp_lines (keep them identical)."""
+    with open(cif) as f:
+        lines = f.readlines()
+    with tempfile.TemporaryDirectory() as td:
+        src = Path(td) / "in.cif"
+        with open(src, "w") as out:
+            for cat, buf in _cif_categories(lines):
+                if cat == "__data__" or cat in DSSP_CATEGORIES:
+                    out.writelines(buf)
+                    if cat != "__data__":
+                        out.write("#\n")
+        dst = Path(td) / "out.dssp"
+        for inp in (src, Path(cif)):
+            r = subprocess.run(["mkdssp", "--output-format", "dssp", str(inp), str(dst)],
+                               capture_output=True, timeout=300)
+            if r.returncode == 0:
+                return dst.read_text().splitlines()
+        return None
+
+
 def dssp_classes(cif, bait_chain):
     """{partner residue: 'H' (DSSP H/G/I) | 'E' (E/B) | 'C'} for the non-bait chain of one model
-    (mkdssp 4.x, classic output). None if mkdssp fails."""
-    with tempfile.NamedTemporaryFile(suffix=".dssp") as tf:
-        r = subprocess.run(["mkdssp", "--output-format", "dssp", str(cif), tf.name],
-                           capture_output=True, timeout=300)
-        if r.returncode != 0:
-            return None
-        lines = Path(tf.name).read_text().splitlines()
+    (mkdssp 4.x, classic output, via mkdssp_lines). None if mkdssp fails."""
+    lines = mkdssp_lines(cif)
+    if lines is None:
+        return None
     k = next(i for i, l in enumerate(lines) if l.startswith("  #  RESIDUE"))
     out = {}
     for l in lines[k + 1:]:
